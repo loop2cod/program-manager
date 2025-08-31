@@ -427,7 +427,7 @@ export default function StudentDetailPage() {
                             </div>
                           </div>
                           
-                          {winner.prize_name && (
+                          {/* {winner.prize_name && (
                             <div className="flex flex-col gap-1 ml-2">
                               <Button
                                 onClick={() => handlePrintCertificate(winner)}
@@ -438,7 +438,7 @@ export default function StudentDetailPage() {
                                 <Printer className="h-3 w-3" />
                               </Button>
                             </div>
-                          )}
+                          )} */}
                         </div>
                       </div>
                     ))}

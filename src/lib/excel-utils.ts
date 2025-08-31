@@ -141,8 +141,8 @@ export function parseExcelFile(file: File): Promise<ProgramUploadData[]> {
         const programs: ProgramUploadData[] = []
         
         jsonData.forEach((row) => {
-          const programName = row['Program Name']?.trim()
-          const sectionCode = row['Section Code']?.trim()
+          const programName = row['Program Name']?.toString()?.trim()
+          const sectionCode = row['Section Code']?.toString()?.trim()
           
           if (!programName || !sectionCode) {
             return // Skip invalid rows

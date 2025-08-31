@@ -442,7 +442,7 @@ export default function AddPrizesPage() {
                     <div>
                       <Label htmlFor="prize-image" className="text-sm font-medium">
                         <span className="flex items-center gap-2">
-                          <Image className="h-4 w-4" alt="" />
+                          <Image className="h-4 w-4" />
                           Image URL (Optional)
                         </span>
                       </Label>
@@ -670,7 +670,7 @@ export default function AddPrizesPage() {
                               <div key={index} className="flex items-center justify-between text-xs">
                                 <div className="flex items-center gap-2">
                                   <span className="font-medium">{prize.prizeName}</span>
-                                  {prize.imageUrl && <Image className="h-3 w-3 text-blue-600" alt="" />}
+                                  {prize.imageUrl && <Image className="h-3 w-3 text-blue-600" />}
                                 </div>
                                 <Badge variant="outline" className="text-xs">
                                   {prize.category}

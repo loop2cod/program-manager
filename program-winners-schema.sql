@@ -66,6 +66,7 @@ JOIN sections sec ON p.section_id = sec.id
 LEFT JOIN program_prize_assignments ppa ON (
     pw.program_id = ppa.program_id 
     AND pw.placement = ppa.placement
+    AND ppa.user_id = pw.user_id
 )
 LEFT JOIN prizes pr ON ppa.prize_id = pr.id
 LEFT JOIN prize_categories pc ON pr.category = pc.code

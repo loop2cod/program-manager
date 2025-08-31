@@ -622,7 +622,7 @@ export default function ProgramWinnersPage() {
           <DialogHeader>
             <DialogTitle>Edit Program Winner</DialogTitle>
             <DialogDescription>
-              Update the student's program placement assignment
+              Update the student&apos;s program placement assignment
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
