@@ -553,7 +553,7 @@ export default function AddPrizesPage() {
                                     <h4 className="font-medium text-sm">{prize.name}</h4>
                                     {prize.average_value && (
                                       <Badge variant="outline" className="text-xs text-green-700">
-                                        ${prize.average_value.toFixed(2)}
+                                        ₹{prize.average_value.toFixed(2)}
                                       </Badge>
                                     )}
                                   </div>

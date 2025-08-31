@@ -500,9 +500,6 @@ export const prizeUtils = {
 
   getDefaultCategories(): { name: string; code: string; description: string }[] {
     return [
-      { name: 'Top Tier Prizes', code: 'A', description: 'First, second, and third place prizes' },
-      { name: 'Performance Awards', code: 'B', description: 'Special recognition and performance-based awards' },
-      { name: 'Participation Prizes', code: 'C', description: 'Certificates and medals for all participants' }
     ]
   },
 
