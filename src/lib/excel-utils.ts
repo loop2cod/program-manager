@@ -203,3 +203,72 @@ export function validateProgramData(programs: ProgramUploadData[]): { isValid: b
   
   return { isValid: errors.length === 0, errors }
 }
+
+// Export programs to Excel
+export interface ProgramExportData {
+  programName: string
+  sectionCode: string
+  sectionName: string
+  description?: string
+  createdAt?: string
+}
+
+export function exportProgramsToExcel(programs: ProgramExportData[], filename?: string) {
+  if (programs.length === 0) {
+    throw new Error('No programs to export')
+  }
+
+  // Prepare data for export
+  const exportData = programs.map(program => ({
+    'Program Name': program.programName,
+    'Section Code': program.sectionCode,
+    'Section Name': program.sectionName,
+    'Description': program.description || '',
+    'Created Date': program.createdAt ? new Date(program.createdAt).toLocaleDateString() : ''
+  }))
+
+  // Create workbook
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.json_to_sheet(exportData)
+
+  // Set column widths
+  const colWidths = [
+    { wch: 30 }, // Program Name
+    { wch: 15 }, // Section Code
+    { wch: 25 }, // Section Name
+    { wch: 40 }, // Description
+    { wch: 15 }  // Created Date
+  ]
+  ws['!cols'] = colWidths
+
+  // Add worksheet to workbook
+  XLSX.utils.book_append_sheet(wb, ws, 'Programs Export')
+
+  // Create summary sheet
+  const sections = [...new Set(programs.map(p => p.sectionCode))]
+  const summary = sections.map(sectionCode => {
+    const sectionPrograms = programs.filter(p => p.sectionCode === sectionCode)
+    const sectionName = sectionPrograms[0]?.sectionName || 'Unknown'
+    return {
+      'Section Code': sectionCode,
+      'Section Name': sectionName,
+      'Program Count': sectionPrograms.length,
+      'Programs': sectionPrograms.map(p => p.programName).join(', ')
+    }
+  })
+
+  const summaryWs = XLSX.utils.json_to_sheet(summary)
+  summaryWs['!cols'] = [
+    { wch: 15 }, // Section Code
+    { wch: 25 }, // Section Name
+    { wch: 15 }, // Program Count
+    { wch: 60 }  // Programs
+  ]
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary')
+
+  // Generate and download file
+  const exportFilename = filename || `programs-export-${new Date().toISOString().split('T')[0]}.xlsx`
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([wbout], { type: 'application/octet-stream' })
+  saveAs(blob, exportFilename)
+}

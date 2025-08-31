@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,24 +13,18 @@ import { FileUpload } from '@/components/ui/file-upload'
 import { downloadSampleTemplate, parseExcelFile, validateProgramData, ProgramUploadData } from '@/lib/excel-utils'
 import { Download, Upload, Plus, Trash2, AlertCircle, CheckCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-
-interface Section {
-  id: string
-  name: string
-  code: string
-  description?: string
-}
-
-interface Program {
-  id: string
-  name: string
-  sectionCode: string
-  description?: string
-}
+import { 
+  sectionsService, 
+  programsService, 
+  databaseUtils,
+  type Section, 
+  type ProgramWithSection 
+} from '@/lib/database'
 
 export default function AddProgramsPage() {
   const [activeTab, setActiveTab] = useState('sections')
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [uploadResult, setUploadResult] = useState<{ programs: ProgramUploadData[]; errors: string[] } | null>(null)
   
   // Sections management
@@ -40,32 +35,49 @@ export default function AddProgramsPage() {
   })
 
   // Programs management  
-  const [programs, setPrograms] = useState<Program[]>([])
+  const [programs, setPrograms] = useState<ProgramWithSection[]>([])
   const [newProgram, setNewProgram] = useState({
     name: '',
-    sectionCode: '',
+    sectionId: '',
     description: ''
   })
 
-  // Generate section code
+  // Load initial data
+  useEffect(() => {
+    loadInitialData()
+  }, [])
+
+  const loadInitialData = async () => {
+    try {
+      setIsLoading(true)
+      const [sectionsData, programsData] = await Promise.all([
+        sectionsService.getAll(),
+        programsService.getAll()
+      ])
+      setSections(sectionsData)
+      setPrograms(programsData)
+    } catch (error) {
+      console.error('Error loading data:', error)
+      toast.error('Failed to load data from database')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Generate section code from name
   const generateSectionCode = (name: string): string => {
-    // Create code from first letters of each word, max 6 characters
     const words = name.trim().split(' ')
-    const code = words.map(word => word.charAt(0).toUpperCase()).join('')
+    const baseCode = words.map(word => word.charAt(0).toUpperCase()).join('')
     
     // Add numbers if code exists
-    let finalCode = code
+    let finalCode = baseCode
     let counter = 1
     while (sections.some(section => section.code === finalCode)) {
-      finalCode = code + counter
+      finalCode = `${baseCode}${counter}`
       counter++
     }
     
-    return finalCode.substring(0, 6)
-  }
-
-  const handleDownloadTemplate = () => {
-    downloadSampleTemplate()
+    return finalCode
   }
 
   const handleFileUpload = async (file: File) => {
@@ -81,149 +93,143 @@ export default function AddProgramsPage() {
         errors: validation.errors
       })
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to process file'
+      toast.error(errorMessage)
       setUploadResult({
         programs: [],
-        errors: [error instanceof Error ? error.message : 'Failed to process file']
+        errors: [errorMessage]
       })
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const addSection = () => {
+  const addSection = async () => {
     if (!newSection.name.trim()) return
     
-    const sectionData: Section = {
-      id: Date.now().toString(),
-      name: newSection.name.trim(),
-      code: generateSectionCode(newSection.name),
-      description: newSection.description.trim() || undefined
+    try {
+      const sectionData = await sectionsService.create({
+        name: newSection.name.trim(),
+        code: generateSectionCode(newSection.name),
+        description: newSection.description.trim() || undefined
+      })
+      
+      setSections(prev => [...prev, sectionData])
+      setNewSection({ name: '', description: '' })
+      toast.success(`Section "${sectionData.name}" created with code ${sectionData.code}`)
+    } catch (error) {
+      console.error('Error creating section:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to create section')
     }
-    
-    setSections(prev => [...prev, sectionData])
-    setNewSection({ name: '', description: '' })
   }
 
-  const removeSection = (id: string) => {
+  const removeSection = async (id: string) => {
     const section = sections.find(s => s.id === id)
+    
     if (section) {
-      // Remove associated programs
-      setPrograms(prev => prev.filter(program => program.sectionCode !== section.code))
+      const associatedPrograms = programs.filter(program => program.section_id === section.id)
+      if (associatedPrograms.length > 0) {
+        toast.error(`Cannot delete section "${section.name}". It has ${associatedPrograms.length} associated program(s).`)
+        return
+      }
     }
-    setSections(prev => prev.filter(section => section.id !== id))
-  }
 
-  const addProgram = () => {
-    if (!newProgram.name.trim() || !newProgram.sectionCode) return
-    
-    // Check for duplicate program name within the same section
-    const isDuplicate = programs.some(program => 
-      program.name.toLowerCase() === newProgram.name.trim().toLowerCase() && 
-      program.sectionCode === newProgram.sectionCode
-    )
-    
-    if (isDuplicate) {
-      alert(`Program "${newProgram.name.trim()}" already exists in this section. Please use a different name.`)
-      return
+    try {
+      await sectionsService.delete(id)
+      setSections(prev => prev.filter(section => section.id !== id))
+      toast.success('Section deleted successfully')
+    } catch (error) {
+      console.error('Error deleting section:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete section')
     }
+  }
+
+  const addProgram = async () => {
+    if (!newProgram.name.trim() || !newProgram.sectionId) return
     
-    const programData: Program = {
-      id: Date.now().toString(),
-      name: newProgram.name.trim(),
-      sectionCode: newProgram.sectionCode,
-      description: newProgram.description.trim() || undefined
+    try {
+      const programData = await programsService.create({
+        name: newProgram.name.trim(),
+        section_id: newProgram.sectionId,
+        description: newProgram.description.trim() || undefined
+      })
+      
+      // Reload programs to get the full data with section info
+      const updatedPrograms = await programsService.getAll()
+      setPrograms(updatedPrograms)
+      
+      setNewProgram({ name: '', sectionId: '', description: '' })
+      toast.success(`Program "${programData.name}" added successfully`)
+    } catch (error) {
+      console.error('Error creating program:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to create program')
     }
-    
-    setPrograms(prev => [...prev, programData])
-    setNewProgram({ name: '', sectionCode: '', description: '' })
   }
 
-  const removeProgram = (id: string) => {
-    setPrograms(prev => prev.filter(program => program.id !== id))
+  const removeProgram = async (id: string) => {
+    try {
+      await programsService.delete(id)
+      setPrograms(prev => prev.filter(program => program.id !== id))
+      toast.success('Program deleted successfully')
+    } catch (error) {
+      console.error('Error deleting program:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete program')
+    }
   }
 
-  const handleSectionsSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    console.log('Sections submit:', sections)
-    // TODO: Implement save to database
-  }
-
-  const handleProgramsSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    console.log('Programs submit:', programs)
-    // TODO: Implement save to database
-  }
-
-  const handleBulkProgramSubmit = () => {
+  const handleBulkProgramSubmit = async () => {
     if (!uploadResult?.programs) return
     
-    // Validate that all section codes exist
-    const validSectionCodes = sections.map(s => s.code)
-    const invalidPrograms = uploadResult.programs.filter(p => !validSectionCodes.includes(p.sectionCode))
-    
-    if (invalidPrograms.length > 0) {
-      const invalidCodes = [...new Set(invalidPrograms.map(p => p.sectionCode))]
-      alert(`Error: The following section codes don't exist: ${invalidCodes.join(', ')}.\n\nPlease create these sections first or update your Excel file.`)
-      return
-    }
-    
-    // Check for duplicates - both within uploaded data and against existing programs
-    const duplicatesInUpload: string[] = []
-    const duplicatesWithExisting: string[] = []
-    
-    // Check for duplicates within uploaded data
-    const uploadedProgramKeys = new Set()
-    uploadResult.programs.forEach(program => {
-      const key = `${program.programName.toLowerCase()}_${program.sectionCode}`
-      if (uploadedProgramKeys.has(key)) {
-        duplicatesInUpload.push(`"${program.programName}" in section ${program.sectionCode}`)
+    try {
+      // Validate that all section codes exist and collect section IDs
+      const programsToCreate: { name: string; section_id: string; description?: string }[] = []
+      
+      for (const uploadedProgram of uploadResult.programs) {
+        const section = await databaseUtils.getSectionByCode(uploadedProgram.sectionCode)
+        if (!section) {
+          toast.error(`Section code "${uploadedProgram.sectionCode}" doesn't exist. Please create this section first.`)
+          return
+        }
+        
+        // Check if program already exists
+        const programExists = await databaseUtils.checkProgramExists(uploadedProgram.programName, section.id)
+        if (programExists) {
+          toast.error(`Program "${uploadedProgram.programName}" already exists in section "${uploadedProgram.sectionCode}".`)
+          return
+        }
+        
+        programsToCreate.push({
+          name: uploadedProgram.programName,
+          section_id: section.id,
+          description: 'Imported from Excel'
+        })
       }
-      uploadedProgramKeys.add(key)
-    })
-    
-    // Check for duplicates with existing programs
-    uploadResult.programs.forEach(uploadedProgram => {
-      const isDuplicate = programs.some(existingProgram => 
-        existingProgram.name.toLowerCase() === uploadedProgram.programName.toLowerCase() && 
-        existingProgram.sectionCode === uploadedProgram.sectionCode
-      )
-      if (isDuplicate) {
-        duplicatesWithExisting.push(`"${uploadedProgram.programName}" in section ${uploadedProgram.sectionCode}`)
-      }
-    })
-    
-    // Show duplicate errors
-    if (duplicatesInUpload.length > 0) {
-      alert(`Error: Found duplicate programs in your Excel file:\n\n${duplicatesInUpload.join('\n')}\n\nPlease remove duplicates and try again.`)
-      return
+      
+      // Create all programs
+      await programsService.createBulk(programsToCreate)
+      
+      // Reload programs to get updated list
+      const updatedPrograms = await programsService.getAll()
+      setPrograms(updatedPrograms)
+      
+      // Clear upload result
+      setUploadResult(null)
+      
+      toast.success(`Successfully imported ${programsToCreate.length} programs!`)
+      setActiveTab('programs')
+      
+    } catch (error) {
+      console.error('Error importing programs:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to import programs')
     }
-    
-    if (duplicatesWithExisting.length > 0) {
-      alert(`Error: The following programs already exist:\n\n${duplicatesWithExisting.join('\n')}\n\nPlease remove them from your Excel file or use different names.`)
-      return
-    }
-    
-    // Convert uploaded programs to local program format
-    const importedPrograms: Program[] = uploadResult.programs.map((uploadedProgram, index) => ({
-      id: `imported_${Date.now()}_${index}`,
-      name: uploadedProgram.programName,
-      sectionCode: uploadedProgram.sectionCode,
-      description: `Imported from Excel`
-    }))
-    
-    // Add to existing programs
-    setPrograms(prev => [...prev, ...importedPrograms])
-    
-    // Clear upload result
-    setUploadResult(null)
-    
-    console.log('Bulk programs imported:', importedPrograms)
-    
-    // Show success message
-    alert(`Successfully imported ${importedPrograms.length} programs!`)
-    
-    // Switch to programs tab to show imported programs
-    setActiveTab('programs')
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-lg">Loading...</div>
+      </div>
+    )
   }
 
   return (
@@ -231,18 +237,17 @@ export default function AddProgramsPage() {
       <div className="space-y-1">
         <h2 className="text-xl font-semibold">Manage Programs</h2>
         <p className="text-sm text-muted-foreground">
-          First create sections (categories), then add programs to those sections
+          Create sections and add programs to organize your events
         </p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full max-w-lg grid-cols-3">
-          <TabsTrigger value="sections" className="text-sm">Sections</TabsTrigger>
-          <TabsTrigger value="programs" className="text-sm">Programs</TabsTrigger>
-          <TabsTrigger value="bulk" className="text-sm">Bulk Upload</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="sections">Sections ({sections.length})</TabsTrigger>
+          <TabsTrigger value="programs">Programs ({programs.length})</TabsTrigger>
+          <TabsTrigger value="bulk-upload">Bulk Upload</TabsTrigger>
         </TabsList>
 
-        {/* SECTIONS TAB */}
         <TabsContent value="sections" className="space-y-4">
           <Card className="max-w-lg shadow-sm">
             <CardHeader className="pb-4">
@@ -252,93 +257,87 @@ export default function AddProgramsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <form onSubmit={handleSectionsSubmit} className="space-y-4">
+              <div className="space-y-4">
                 <div className="space-y-3">
-                  <div className="space-y-1.5">
+                  <div>
                     <Label htmlFor="section-name" className="text-sm font-medium">Section Name</Label>
-                    <Input 
-                      id="section-name" 
-                      placeholder="e.g., JUNIOR BOYS, KIDS 1 GIRLS" 
+                    <Input
+                      id="section-name"
+                      placeholder="e.g., JUNIOR BOYS"
                       className="h-9"
                       value={newSection.name}
-                      onChange={(e) => setNewSection(prev => ({...prev, name: e.target.value}))}
-                      required
+                      onChange={(e) => setNewSection(prev => ({ ...prev, name: e.target.value }))}
                     />
                   </div>
-                  
-                  <div className="space-y-1.5">
-                    <Label htmlFor="section-description" className="text-sm font-medium">Description (Optional)</Label>
-                    <Textarea 
-                      id="section-description" 
-                      placeholder="Section description"
-                      rows={2}
-                      className="resize-none"
+                  <div>
+                    <Label htmlFor="section-desc" className="text-sm font-medium">Description (Optional)</Label>
+                    <Textarea
+                      id="section-desc"
+                      placeholder="Brief description..."
+                      className="min-h-[60px] text-sm resize-none"
                       value={newSection.description}
-                      onChange={(e) => setNewSection(prev => ({...prev, description: e.target.value}))}
+                      onChange={(e) => setNewSection(prev => ({ ...prev, description: e.target.value }))}
                     />
                   </div>
-
-                  <Button 
-                    type="button" 
-                    onClick={addSection} 
-                    className="w-full h-9"
-                    disabled={!newSection.name.trim()}
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Add Section
-                  </Button>
-                </div>
-
-                {sections.length > 0 && (
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Created Sections ({sections.length})</Label>
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {sections.map((section) => (
-                        <Card key={section.id} className="p-3 bg-gray-50">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <p className="text-sm font-medium">{section.name}</p>
-                                <Badge variant="secondary" className="text-xs">
-                                  {section.code}
-                                </Badge>
-                              </div>
-                              {section.description && (
-                                <p className="text-xs text-muted-foreground mt-1">{section.description}</p>
-                              )}
-                            </div>
-                            <Button
-                              type="button"
-                              onClick={() => removeSection(section.id)}
-                              size="sm"
-                              variant="outline"
-                              className="h-6 w-6 p-0"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </Card>
-                      ))}
+                  {newSection.name.trim() && (
+                    <div className="text-xs text-muted-foreground">
+                      Generated code: <span className="font-mono font-medium">{generateSectionCode(newSection.name)}</span>
                     </div>
-                    
-                    <Button type="submit" className="w-full h-9 mt-4">
-                      Save {sections.length} Section{sections.length > 1 ? 's' : ''}
-                    </Button>
-                  </div>
-                )}
+                  )}
+                </div>
+                <Button onClick={addSection} size="sm" className="h-9" disabled={!newSection.name.trim()}>
+                  <Plus className="mr-1.5 h-3 w-3" />
+                  Add Section
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-                {sections.length === 0 && (
-                  <div className="text-center py-6 border-2 border-dashed border-gray-300 rounded-lg">
-                    <p className="text-sm text-muted-foreground">No sections created yet</p>
-                    <p className="text-xs text-muted-foreground">Create sections first before adding programs</p>
-                  </div>
-                )}
-              </form>
+          {/* Sections List */}
+          <Card className="shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg">All Sections</CardTitle>
+              <CardDescription className="text-sm">
+                Manage your program sections
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {sections.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">No sections found</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Create your first section to get started
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {sections.map((section) => (
+                    <div key={section.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{section.name}</span>
+                          <Badge variant="secondary" className="text-xs">{section.code}</Badge>
+                        </div>
+                        {section.description && (
+                          <p className="text-xs text-muted-foreground">{section.description}</p>
+                        )}
+                      </div>
+                      <Button
+                        onClick={() => removeSection(section.id)}
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* PROGRAMS TAB */}
         <TabsContent value="programs" className="space-y-4">
           <Card className="max-w-lg shadow-sm">
             <CardHeader className="pb-4">
@@ -349,266 +348,220 @@ export default function AddProgramsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {sections.length === 0 ? (
-                <div className="text-center py-8 border-2 border-dashed border-orange-300 rounded-lg bg-orange-50">
-                  <p className="text-sm font-medium text-orange-800">No sections available</p>
-                  <p className="text-xs text-orange-600 mt-1">Please create sections first before adding programs</p>
-                  <Button 
-                    onClick={() => setActiveTab('sections')} 
-                    size="sm" 
-                    className="mt-3"
+                <div className="text-center py-6 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <AlertCircle className="mx-auto h-8 w-8 text-yellow-600 mb-2" />
+                  <p className="text-sm text-yellow-800 font-medium">No sections available</p>
+                  <p className="text-xs text-yellow-600 mt-1">
+                    Create sections first before adding programs
+                  </p>
+                  <Button
+                    onClick={() => setActiveTab('sections')}
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 h-8 border-yellow-300 text-yellow-700 hover:bg-yellow-100"
                   >
-                    Go to Sections
+                    Create Sections
                   </Button>
                 </div>
               ) : (
-                <form onSubmit={handleProgramsSubmit} className="space-y-4">
+                <div className="space-y-4">
                   <div className="space-y-3">
-                    <div className="space-y-1.5">
+                    <div>
                       <Label htmlFor="program-name" className="text-sm font-medium">Program Name</Label>
-                      <Input 
-                        id="program-name" 
-                        placeholder="e.g., BURDA, HAND CRAFT, CHITHRATHUNNAL" 
+                      <Input
+                        id="program-name"
+                        placeholder="e.g., BURDA"
                         className="h-9"
                         value={newProgram.name}
-                        onChange={(e) => setNewProgram(prev => ({...prev, name: e.target.value}))}
-                        required
+                        onChange={(e) => setNewProgram(prev => ({ ...prev, name: e.target.value }))}
                       />
                     </div>
-                    
-                    <div className="space-y-1.5">
-                      <Label htmlFor="section-select" className="text-sm font-medium">Select Section</Label>
-                      <Select 
-                        value={newProgram.sectionCode} 
-                        onValueChange={(value) => setNewProgram(prev => ({...prev, sectionCode: value}))}
+                    <div>
+                      <Label htmlFor="program-section" className="text-sm font-medium">Section</Label>
+                      <Select
+                        value={newProgram.sectionId}
+                        onValueChange={(value) => setNewProgram(prev => ({ ...prev, sectionId: value }))}
                       >
                         <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Choose a section" />
+                          <SelectValue placeholder="Select section" />
                         </SelectTrigger>
                         <SelectContent>
                           {sections.map((section) => (
-                            <SelectItem key={section.code} value={section.code}>
-                              <div className="flex items-center gap-2">
+                            <SelectItem key={section.id} value={section.id}>
+                              <span className="flex items-center gap-2">
                                 <span>{section.name}</span>
-                                <Badge variant="outline" className="text-xs">
-                                  {section.code}
-                                </Badge>
-                              </div>
+                                <span className="text-xs text-muted-foreground">({section.code})</span>
+                              </span>
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
-                    
-                    <div className="space-y-1.5">
-                      <Label htmlFor="program-description" className="text-sm font-medium">Description (Optional)</Label>
-                      <Textarea 
-                        id="program-description" 
-                        placeholder="Program description"
-                        rows={2}
-                        className="resize-none"
+                    <div>
+                      <Label htmlFor="program-desc" className="text-sm font-medium">Description (Optional)</Label>
+                      <Textarea
+                        id="program-desc"
+                        placeholder="Brief description..."
+                        className="min-h-[60px] text-sm resize-none"
                         value={newProgram.description}
-                        onChange={(e) => setNewProgram(prev => ({...prev, description: e.target.value}))}
+                        onChange={(e) => setNewProgram(prev => ({ ...prev, description: e.target.value }))}
                       />
                     </div>
-
-                    <Button 
-                      type="button" 
-                      onClick={addProgram} 
-                      className="w-full h-9"
-                      disabled={!newProgram.name.trim() || !newProgram.sectionCode}
-                    >
-                      <Plus className="h-3 w-3 mr-1" />
-                      Add Program
-                    </Button>
                   </div>
+                  <Button 
+                    onClick={addProgram} 
+                    size="sm" 
+                    className="h-9" 
+                    disabled={!newProgram.name.trim() || !newProgram.sectionId}
+                  >
+                    <Plus className="mr-1.5 h-3 w-3" />
+                    Add Program
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-                  {programs.length > 0 && (
-                    <div className="space-y-3">
-                      <Label className="text-sm font-medium">Added Programs ({programs.length})</Label>
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {programs.map((program) => {
-                          const section = sections.find(s => s.code === program.sectionCode)
-                          return (
-                            <Card key={program.id} className="p-3 bg-gray-50">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-sm font-medium">{program.name}</p>
-                                  <div className="flex items-center gap-1 mt-1">
-                                    <span className="text-xs text-muted-foreground">
-                                      {section?.name}
-                                    </span>
-                                    <Badge variant="outline" className="text-xs">
-                                      {program.sectionCode}
-                                    </Badge>
-                                  </div>
-                                  {program.description && (
-                                    <p className="text-xs text-muted-foreground mt-1">{program.description}</p>
-                                  )}
-                                </div>
-                                <Button
-                                  type="button"
-                                  onClick={() => removeProgram(program.id)}
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 w-6 p-0"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            </Card>
-                          )
-                        })}
+          {/* Programs List */}
+          <Card className="shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg">All Programs</CardTitle>
+              <CardDescription className="text-sm">
+                Manage your programs organized by sections
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {programs.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">No programs found</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Add programs manually or use bulk upload
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {programs.map((program) => (
+                    <div key={program.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{program.name}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {program.section?.code}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{program.section?.name}</span>
+                          {program.description && (
+                            <>
+                              <span>•</span>
+                              <span>{program.description}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      
-                      <Button type="submit" className="w-full h-9 mt-4">
-                        Save {programs.length} Program{programs.length > 1 ? 's' : ''}
+                      <Button
+                        onClick={() => removeProgram(program.id)}
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                  )}
-
-                  {programs.length === 0 && (
-                    <div className="text-center py-6 border-2 border-dashed border-gray-300 rounded-lg">
-                      <p className="text-sm text-muted-foreground">No programs added yet</p>
-                      <p className="text-xs text-muted-foreground">Add programs to your sections</p>
-                    </div>
-                  )}
-                </form>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* BULK UPLOAD TAB */}
-        <TabsContent value="bulk" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card className="shadow-sm">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-lg">Download Template</CardTitle>
-                <CardDescription className="text-sm">
-                  Get the Excel template for bulk uploading programs with section codes
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button onClick={handleDownloadTemplate} className="w-full h-9">
-                  <Download className="h-4 w-4 mr-2" />
-                  Download Excel Template
+        <TabsContent value="bulk-upload" className="space-y-4">
+          <Card className="max-w-2xl shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg">Bulk Upload Programs</CardTitle>
+              <CardDescription className="text-sm">
+                Upload multiple programs from Excel file. Section codes must exist in your sections.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex gap-3">
+                <Button onClick={downloadSampleTemplate} variant="outline" size="sm" className="h-9 flex-shrink-0">
+                  <Download className="mr-1.5 h-3 w-3" />
+                  Download Template
                 </Button>
-              </CardContent>
-            </Card>
+              </div>
 
-            <Card className="shadow-sm">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-lg">Upload Programs</CardTitle>
-                <CardDescription className="text-sm">
-                  Upload your completed Excel file to add multiple programs
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <FileUpload onFileSelect={handleFileUpload} />
-              </CardContent>
-            </Card>
-          </div>
+              <FileUpload 
+                onFileSelect={handleFileUpload}
+                className="max-w-full"
+              />
 
-          {isProcessing && (
-            <Card className="shadow-sm">
-              <CardContent className="py-6">
-                <div className="text-center">
-                  <Upload className="h-8 w-8 mx-auto mb-2 animate-pulse text-blue-500" />
-                  <p className="text-sm font-medium">Processing file...</p>
-                  <p className="text-xs text-muted-foreground">Please wait while we parse your Excel file</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {uploadResult && (
-            <Card className="shadow-sm">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  {uploadResult.errors.length === 0 ? (
-                    <CheckCircle className="h-5 w-5 text-green-600" />
-                  ) : (
-                    <AlertCircle className="h-5 w-5 text-red-600" />
+              {uploadResult && (
+                <div className="space-y-4">
+                  {uploadResult.errors.length > 0 && (
+                    <Card className="border-red-200 bg-red-50">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm text-red-800 flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4" />
+                          Validation Errors
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <ul className="text-xs text-red-700 space-y-1">
+                          {uploadResult.errors.map((error, index) => (
+                            <li key={index}>• {error}</li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
                   )}
-                  Upload Results
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {uploadResult.errors.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-medium text-red-800">Errors Found:</h4>
-                    <div className="bg-red-50 p-3 rounded-lg space-y-1 max-h-40 overflow-y-auto">
-                      {uploadResult.errors.map((error, index) => (
-                        <p key={index} className="text-xs text-red-700">{error}</p>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
-                {uploadResult.programs.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-medium text-green-800">
-                      Programs Found: {uploadResult.programs.length}
-                    </h4>
-                    
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {uploadResult.programs.map((item, index) => {
-                        const validSectionCodes = sections.map(s => s.code)
-                        const isValidSection = validSectionCodes.includes(item.sectionCode)
-                        const matchingSection = sections.find(s => s.code === item.sectionCode)
-                        
-                        return (
-                          <div key={index} className={`p-3 rounded-lg ${isValidSection ? 'bg-green-50' : 'bg-red-50'}`}>
-                            <div className="flex items-center justify-between mb-1">
-                              <h5 className="font-medium text-sm">{item.programName}</h5>
-                              <Badge variant={isValidSection ? "secondary" : "destructive"} className="text-xs">
-                                {item.sectionCode}
-                              </Badge>
-                            </div>
-                            {isValidSection && matchingSection ? (
-                              <p className="text-xs text-green-600">→ {matchingSection.name}</p>
-                            ) : (
-                              <p className="text-xs text-red-600">⚠️ Section code not found</p>
-                            )}
+                  {uploadResult.programs.length > 0 && uploadResult.errors.length === 0 && (
+                    <Card className="border-green-200 bg-green-50">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm text-green-800 flex items-center gap-2">
+                          <CheckCircle className="h-4 w-4" />
+                          Upload Results ({uploadResult.programs.length} programs)
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="pt-0 space-y-3">
+                        <div className="max-h-32 overflow-y-auto">
+                          <div className="grid gap-2">
+                            {uploadResult.programs.map((program, index) => {
+                              const sectionExists = sections.some(s => s.code === program.sectionCode)
+                              return (
+                                <div key={index} className="flex items-center justify-between text-xs">
+                                  <span className="font-medium">{program.programName}</span>
+                                  <Badge 
+                                    variant={sectionExists ? "default" : "destructive"} 
+                                    className="text-xs"
+                                  >
+                                    {program.sectionCode} {!sectionExists && "(Invalid)"}
+                                  </Badge>
+                                </div>
+                              )
+                            })}
                           </div>
-                        )
-                      })}
-                    </div>
-
-                    {uploadResult.errors.length === 0 && (
-                      <div className="space-y-2">
-                        {(() => {
-                          const validSectionCodes = sections.map(s => s.code)
-                          const invalidPrograms = uploadResult.programs.filter(p => !validSectionCodes.includes(p.sectionCode))
-                          
-                          if (invalidPrograms.length > 0) {
-                            const invalidCodes = [...new Set(invalidPrograms.map(p => p.sectionCode))]
-                            return (
-                              <div className="bg-red-50 p-3 rounded-lg border border-red-200">
-                                <p className="text-sm font-medium text-red-800">Cannot Import</p>
-                                <p className="text-xs text-red-600 mt-1">
-                                  Missing section codes: {invalidCodes.join(', ')}
-                                </p>
-                                <p className="text-xs text-red-600 mt-1">
-                                  Create these sections first or update your Excel file.
-                                </p>
-                              </div>
-                            )
-                          }
-                          
-                          return (
-                            <Button onClick={handleBulkProgramSubmit} className="w-full h-9">
-                              Import {uploadResult.programs.length} Program{uploadResult.programs.length > 1 ? 's' : ''}
-                            </Button>
-                          )
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+                        </div>
+                        
+                        <div className="pt-2 border-t border-green-200">
+                          <Button 
+                            onClick={handleBulkProgramSubmit}
+                            size="sm" 
+                            className="h-9"
+                            disabled={isProcessing}
+                          >
+                            <Upload className="mr-1.5 h-3 w-3" />
+                            {isProcessing ? 'Importing...' : 'Import Programs'}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
