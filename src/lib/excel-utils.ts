@@ -904,3 +904,291 @@ export function exportProgramsWithParticipantsToExcel(
   const blob = new Blob([wbout], { type: 'application/octet-stream' })
   saveAs(blob, exportFilename)
 }
+
+// Student Prize Export interfaces and functions
+export interface StudentPrizeExportData {
+  studentName: string
+  chestNo: string
+  sectionCode: string
+  sectionName: string
+  programName: string
+  placement: string
+  prizeName: string
+  prizeCategory: string
+  prizeValue?: number
+  dateAwarded: string
+  notes?: string
+}
+
+export function exportStudentPrizesToExcel(
+  prizes: StudentPrizeExportData[],
+  studentName: string,
+  filename?: string
+) {
+  const wb = XLSX.utils.book_new()
+
+  // Student Information Sheet
+  if (prizes.length > 0) {
+    const studentInfo = [
+      { 'Field': 'Student Name', 'Value': prizes[0].studentName },
+      { 'Field': 'Chest Number', 'Value': prizes[0].chestNo },
+      { 'Field': 'Section', 'Value': `${prizes[0].sectionName} (${prizes[0].sectionCode})` },
+      { 'Field': 'Total Prizes Won', 'Value': prizes.length },
+      { 'Field': 'Report Generated', 'Value': new Date().toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric'
+      }) }
+    ]
+
+    const infoWs = XLSX.utils.json_to_sheet(studentInfo)
+    infoWs['!cols'] = [
+      { wch: 25 }, // Field
+      { wch: 40 }  // Value
+    ]
+    XLSX.utils.book_append_sheet(wb, infoWs, 'Student Info')
+  }
+
+  // Prizes Won Sheet
+  const prizesWs = XLSX.utils.json_to_sheet(prizes.map(prize => ({
+    'Program': prize.programName,
+    'Placement': prize.placement,
+    'Prize Name': prize.prizeName,
+    'Category': prize.prizeCategory,
+    'Value': prize.prizeValue ? `$${prize.prizeValue}` : 'N/A',
+    'Date Awarded': prize.dateAwarded,
+    'Notes': prize.notes || ''
+  })))
+
+  // Set column widths
+  prizesWs['!cols'] = [
+    { wch: 25 }, // Program
+    { wch: 15 }, // Placement
+    { wch: 25 }, // Prize Name
+    { wch: 15 }, // Category
+    { wch: 12 }, // Value
+    { wch: 15 }, // Date Awarded
+    { wch: 30 }  // Notes
+  ]
+
+  XLSX.utils.book_append_sheet(wb, prizesWs, 'Prizes Won')
+
+  // Prize Summary by Category
+  const categoryMap = new Map<string, { count: number, totalValue: number, prizes: string[] }>()
+  
+  prizes.forEach(prize => {
+    const category = prize.prizeCategory || 'Unknown'
+    const existing = categoryMap.get(category) || { count: 0, totalValue: 0, prizes: [] }
+    existing.count += 1
+    existing.totalValue += prize.prizeValue || 0
+    existing.prizes.push(prize.prizeName)
+    categoryMap.set(category, existing)
+  })
+
+  const categorySummary = Array.from(categoryMap.entries()).map(([category, data]) => ({
+    'Prize Category': category,
+    'Number of Prizes': data.count,
+    'Total Value': data.totalValue > 0 ? `$${data.totalValue}` : 'N/A',
+    'Prize Names': data.prizes.join(', ')
+  }))
+
+  const summaryWs = XLSX.utils.json_to_sheet(categorySummary)
+  summaryWs['!cols'] = [
+    { wch: 20 }, // Prize Category
+    { wch: 18 }, // Number of Prizes
+    { wch: 15 }, // Total Value
+    { wch: 50 }  // Prize Names
+  ]
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'Prize Summary')
+
+  // Generate certificate-style data
+  const certificateData = prizes.map(prize => ({
+    'CERTIFICATE OF ACHIEVEMENT': '',
+    'This is to certify that': '',
+    'Student Name': prize.studentName.toUpperCase(),
+    'Chest Number': prize.chestNo,
+    'Has been awarded': '',
+    'Prize': prize.prizeName,
+    'For achieving': prize.placement,
+    'In the program': prize.programName,
+    'Section': `${prize.sectionName} (${prize.sectionCode})`,
+    'Date': prize.dateAwarded,
+    'Congratulations on this achievement!': ''
+  }))
+
+  const certificateWs = XLSX.utils.json_to_sheet(certificateData)
+  certificateWs['!cols'] = Array(12).fill({ wch: 20 })
+  XLSX.utils.book_append_sheet(wb, certificateWs, 'Certificates')
+
+  // Generate and download file
+  const exportFilename = filename || `${studentName.replace(/\s+/g, '-')}-prizes-${new Date().toISOString().split('T')[0]}.xlsx`
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([wbout], { type: 'application/octet-stream' })
+  saveAs(blob, exportFilename)
+}
+
+// Generate printable prize certificate HTML
+export function generatePrizeCertificateHTML(prize: StudentPrizeExportData): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Prize Certificate - ${prize.studentName}</title>
+      <style>
+        @page { 
+          size: A4; 
+          margin: 20mm; 
+        }
+        body {
+          font-family: 'Times New Roman', serif;
+          line-height: 1.6;
+          color: #333;
+          background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+          min-height: 100vh;
+          margin: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .certificate {
+          background: white;
+          padding: 60px;
+          border: 8px solid #2c5282;
+          border-radius: 20px;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+          text-align: center;
+          max-width: 800px;
+          width: 100%;
+          position: relative;
+        }
+        .certificate::before {
+          content: '';
+          position: absolute;
+          top: 20px;
+          left: 20px;
+          right: 20px;
+          bottom: 20px;
+          border: 2px solid #4a90e2;
+          border-radius: 10px;
+        }
+        .header {
+          font-size: 36px;
+          font-weight: bold;
+          color: #2c5282;
+          margin-bottom: 20px;
+          text-transform: uppercase;
+          letter-spacing: 3px;
+        }
+        .subheader {
+          font-size: 18px;
+          color: #4a90e2;
+          margin-bottom: 40px;
+          font-style: italic;
+        }
+        .student-name {
+          font-size: 32px;
+          font-weight: bold;
+          color: #1a365d;
+          margin: 30px 0;
+          text-transform: uppercase;
+          letter-spacing: 2px;
+          border-bottom: 3px solid #4a90e2;
+          padding-bottom: 10px;
+        }
+        .achievement {
+          font-size: 20px;
+          color: #2d3748;
+          margin: 20px 0;
+          line-height: 1.8;
+        }
+        .prize-name {
+          font-size: 24px;
+          font-weight: bold;
+          color: #c53030;
+          margin: 20px 0;
+        }
+        .program-details {
+          font-size: 16px;
+          color: #4a5568;
+          margin: 15px 0;
+        }
+        .date {
+          font-size: 14px;
+          color: #718096;
+          margin-top: 40px;
+        }
+        .congratulations {
+          font-size: 18px;
+          color: #2c5282;
+          font-weight: bold;
+          margin-top: 30px;
+          font-style: italic;
+        }
+        @media print {
+          body {
+            background: white;
+          }
+          .certificate {
+            box-shadow: none;
+            border: 4px solid #2c5282;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="certificate">
+        <div class="header">Certificate of Achievement</div>
+        <div class="subheader">This is to certify that</div>
+        
+        <div class="student-name">${prize.studentName}</div>
+        
+        <div class="achievement">
+          Chest Number: <strong>${prize.chestNo}</strong><br>
+          Section: <strong>${prize.sectionName} (${prize.sectionCode})</strong>
+        </div>
+        
+        <div class="achievement">
+          Has been awarded
+        </div>
+        
+        <div class="prize-name">${prize.prizeName}</div>
+        
+        <div class="achievement">
+          For achieving <strong>${prize.placement}</strong><br>
+          in the program
+        </div>
+        
+        <div class="program-details">
+          <strong>${prize.programName}</strong><br>
+          Prize Category: ${prize.prizeCategory}
+          ${prize.prizeValue ? `<br>Prize Value: $${prize.prizeValue}` : ''}
+        </div>
+        
+        ${prize.notes ? `<div class="program-details">Notes: ${prize.notes}</div>` : ''}
+        
+        <div class="date">Date Awarded: ${prize.dateAwarded}</div>
+        
+        <div class="congratulations">
+          🎉 Congratulations on this outstanding achievement! 🎉
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+}
+
+// Print prize certificate
+export function printPrizeCertificate(prize: StudentPrizeExportData) {
+  const certificateHTML = generatePrizeCertificateHTML(prize)
+  const printWindow = window.open('', '_blank')
+  if (printWindow) {
+    printWindow.document.write(certificateHTML)
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => {
+      printWindow.print()
+    }, 250)
+  }
+}

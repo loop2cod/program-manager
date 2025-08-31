@@ -23,7 +23,8 @@ import {
   Trophy, 
   Users, 
   LogOut,
-  Target
+  Target,
+  Award
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -52,6 +53,11 @@ const menuItems = [
     title: "Add Students",
     url: "/dashboard/add-students",
     icon: Users,
+  },
+  {
+    title: "Program Winners",
+    url: "/dashboard/program-winners",
+    icon: Award,
   },
 ]
 

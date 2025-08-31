@@ -862,6 +862,173 @@ export interface ProgramWithParticipants extends ProgramWithSection {
   participant_count: number
 }
 
+// Program Winner interfaces
+export interface ProgramWinner {
+  id: string
+  program_id: string
+  student_id: string
+  placement: string
+  placement_order: number
+  notes?: string
+  created_at?: string
+  updated_at?: string
+  user_id?: string
+}
+
+export interface ProgramWinnerWithDetails extends ProgramWinner {
+  student_name: string
+  student_chest_no: string
+  program_name: string
+  section_name: string
+  section_code: string
+  // Prize information
+  prize_assignment_id?: string
+  prize_id?: string
+  prize_quantity?: number
+  prize_name?: string
+  prize_image_url?: string
+  prize_category?: string
+  prize_description?: string
+  prize_average_value?: number
+  prize_category_name?: string
+  prize_category_description?: string
+}
+
+// Program Winner operations
+export const programWinnersService = {
+  async getAll(): Promise<ProgramWinnerWithDetails[]> {
+    const { data, error } = await supabase
+      .from('program_winners_view')
+      .select('*')
+      .order('section_code', { ascending: true })
+      .order('program_name', { ascending: true })
+      .order('placement_order', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching program winners:', error)
+      throw new Error(`Failed to fetch program winners: ${error.message}`)
+    }
+
+    return data || []
+  },
+
+  async getByProgram(programId: string): Promise<ProgramWinnerWithDetails[]> {
+    const { data, error } = await supabase
+      .from('program_winners_view')
+      .select('*')
+      .eq('program_id', programId)
+      .order('placement_order', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching program winners:', error)
+      throw new Error(`Failed to fetch program winners: ${error.message}`)
+    }
+
+    return data || []
+  },
+
+  async getByStudent(studentId: string): Promise<ProgramWinnerWithDetails[]> {
+    const { data, error } = await supabase
+      .from('program_winners_view')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('placement_order', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching student winners:', error)
+      throw new Error(`Failed to fetch student winners: ${error.message}`)
+    }
+
+    return data || []
+  },
+
+  async create(winner: {
+    program_id: string
+    student_id: string
+    placement: string
+    placement_order?: number
+    notes?: string
+  }): Promise<ProgramWinner> {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('User not authenticated')
+
+    const placementOrder = winner.placement_order || assignmentUtils.generatePlacementOrder(winner.placement)
+
+    const { data, error } = await supabase
+      .from('program_winners')
+      .insert({
+        ...winner,
+        placement_order: placementOrder,
+        user_id: user.id
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error creating program winner:', error)
+      if (error.code === '23505') {
+        throw new Error('This student is already assigned to this placement for this program')
+      }
+      throw new Error(`Failed to create program winner: ${error.message}`)
+    }
+
+    return data
+  },
+
+  async update(id: string, updates: {
+    student_id?: string
+    placement?: string
+    placement_order?: number
+    notes?: string
+  }): Promise<ProgramWinner> {
+    const updateData = { ...updates }
+    if (updateData.placement && !updateData.placement_order) {
+      updateData.placement_order = assignmentUtils.generatePlacementOrder(updateData.placement)
+    }
+
+    const { data, error } = await supabase
+      .from('program_winners')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating program winner:', error)
+      if (error.code === '23505') {
+        throw new Error('This student is already assigned to this placement for this program')
+      }
+      throw new Error(`Failed to update program winner: ${error.message}`)
+    }
+
+    return data
+  },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('program_winners')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error deleting program winner:', error)
+      throw new Error(`Failed to delete program winner: ${error.message}`)
+    }
+  },
+
+  async deleteByProgram(programId: string): Promise<void> {
+    const { error } = await supabase
+      .from('program_winners')
+      .delete()
+      .eq('program_id', programId)
+
+    if (error) {
+      console.error('Error deleting program winners:', error)
+      throw new Error(`Failed to delete program winners: ${error.message}`)
+    }
+  }
+}
+
 // Get programs with participant counts
 export const getProgramsWithParticipants = async (): Promise<ProgramWithParticipants[]> => {
   try {

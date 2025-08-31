@@ -10,10 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Plus, Loader2, Download, Filter, X } from 'lucide-react'
 import { 
-  programsService, 
   sectionsService, 
   getProgramsWithParticipants,
-  type ProgramWithSection, 
   type ProgramWithParticipants,
   type Section 
 } from '@/lib/database'

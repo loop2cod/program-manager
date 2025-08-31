@@ -17,14 +17,13 @@ import {
   type Section,
   type ProgramWithSection
 } from '@/lib/database'
-import { Plus, Trash2, Users, User, Download, Upload, FileText } from 'lucide-react'
+import { Plus, Trash2, Users, User, Download, Upload } from 'lucide-react'
 import Link from 'next/link'
 import { 
   downloadStudentSampleTemplate, 
   parseStudentUploadFile, 
   validateStudentData, 
   exportStudentsToExcel,
-  type StudentUploadData,
   type StudentExportData 
 } from '@/lib/excel-utils'
 import { useDropzone } from 'react-dropzone'
