@@ -241,3 +241,293 @@ export const databaseUtils = {
     return !!data
   }
 }
+
+// Prize Category interface
+export interface PrizeCategory {
+  id: string
+  name: string
+  code: string
+  description?: string
+  created_at?: string
+  updated_at?: string
+  user_id?: string
+}
+
+// Prize interface
+export interface Prize {
+  id: string
+  name: string
+  image_url?: string
+  category: string
+  description?: string
+  average_value?: number
+  created_at?: string
+  updated_at?: string
+  user_id?: string
+}
+
+// Prize operations
+export const prizesService = {
+  async getAll(): Promise<Prize[]> {
+    const { data, error } = await supabase
+      .from('prizes')
+      .select('*')
+      .order('category', { ascending: true })
+      .order('name', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching prizes:', error)
+      throw new Error(`Failed to fetch prizes: ${error.message}`)
+    }
+
+    return data || []
+  },
+
+  async getByCategory(category: string): Promise<Prize[]> {
+    const { data, error } = await supabase
+      .from('prizes')
+      .select('*')
+      .eq('category', category)
+      .order('name', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching prizes by category:', error)
+      throw new Error(`Failed to fetch prizes: ${error.message}`)
+    }
+
+    return data || []
+  },
+
+  async create(prize: { name: string; image_url?: string; category: string; description?: string; average_value?: number }): Promise<Prize> {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('User not authenticated')
+
+    const { data, error } = await supabase
+      .from('prizes')
+      .insert({
+        ...prize,
+        user_id: user.id
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error creating prize:', error)
+      if (error.code === '23505') { // Unique constraint violation
+        throw new Error('A prize with this name already exists in this category')
+      }
+      throw new Error(`Failed to create prize: ${error.message}`)
+    }
+
+    return data
+  },
+
+  async createBulk(prizes: { name: string; image_url?: string; category: string; description?: string; average_value?: number }[]): Promise<Prize[]> {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('User not authenticated')
+
+    const prizesWithUserId = prizes.map(prize => ({
+      ...prize,
+      user_id: user.id
+    }))
+
+    const { data, error } = await supabase
+      .from('prizes')
+      .insert(prizesWithUserId)
+      .select()
+
+    if (error) {
+      console.error('Error creating prizes:', error)
+      if (error.code === '23505') { // Unique constraint violation
+        throw new Error('One or more prizes already exist in their respective categories')
+      }
+      throw new Error(`Failed to create prizes: ${error.message}`)
+    }
+
+    return data || []
+  },
+
+  async update(id: string, updates: { name?: string; image_url?: string; category?: string; description?: string; average_value?: number }): Promise<Prize> {
+    const { data, error } = await supabase
+      .from('prizes')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating prize:', error)
+      if (error.code === '23505') { // Unique constraint violation
+        throw new Error('A prize with this name already exists in this category')
+      }
+      throw new Error(`Failed to update prize: ${error.message}`)
+    }
+
+    return data
+  },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('prizes')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error deleting prize:', error)
+      throw new Error(`Failed to delete prize: ${error.message}`)
+    }
+  }
+}
+
+// Prize Categories operations
+export const prizeCategoriesService = {
+  async getAll(): Promise<PrizeCategory[]> {
+    const { data, error } = await supabase
+      .from('prize_categories')
+      .select('*')
+      .order('code', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching prize categories:', error)
+      throw new Error(`Failed to fetch prize categories: ${error.message}`)
+    }
+
+    return data || []
+  },
+
+  async create(category: { name: string; code: string; description?: string }): Promise<PrizeCategory> {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('User not authenticated')
+
+    const { data, error } = await supabase
+      .from('prize_categories')
+      .insert({
+        ...category,
+        code: category.code.toUpperCase(),
+        user_id: user.id
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error creating prize category:', error)
+      if (error.code === '23505') { // Unique constraint violation
+        throw new Error('A category with this code already exists')
+      }
+      throw new Error(`Failed to create category: ${error.message}`)
+    }
+
+    return data
+  },
+
+  async update(id: string, updates: { name?: string; code?: string; description?: string }): Promise<PrizeCategory> {
+    const updateData = { ...updates }
+    if (updateData.code) {
+      updateData.code = updateData.code.toUpperCase()
+    }
+
+    const { data, error } = await supabase
+      .from('prize_categories')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating prize category:', error)
+      if (error.code === '23505') { // Unique constraint violation
+        throw new Error('A category with this code already exists')
+      }
+      throw new Error(`Failed to update category: ${error.message}`)
+    }
+
+    return data
+  },
+
+  async delete(id: string): Promise<void> {
+    // Check if category has associated prizes
+    const { data: prizes, error: prizesError } = await supabase
+      .from('prizes')
+      .select('id')
+      .eq('category', (await supabase.from('prize_categories').select('code').eq('id', id).single()).data?.code)
+
+    if (prizesError && prizesError.code !== 'PGRST116') {
+      throw new Error('Failed to check for associated prizes')
+    }
+
+    if (prizes && prizes.length > 0) {
+      throw new Error('Cannot delete category that has associated prizes')
+    }
+
+    const { error } = await supabase
+      .from('prize_categories')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error deleting prize category:', error)
+      throw new Error(`Failed to delete category: ${error.message}`)
+    }
+  }
+}
+
+// Prize utility functions
+export const prizeUtils = {
+  async checkPrizeExists(name: string, category: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('prizes')
+      .select('id')
+      .eq('name', name)
+      .eq('category', category)
+      .single()
+
+    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+      console.error('Error checking prize existence:', error)
+      return false
+    }
+
+    return !!data
+  },
+
+  async getAvailableCategories(): Promise<PrizeCategory[]> {
+    return await prizeCategoriesService.getAll()
+  },
+
+  async isValidCategory(categoryCode: string): Promise<boolean> {
+    const categories = await this.getAvailableCategories()
+    return categories.some(cat => cat.code === categoryCode.toUpperCase())
+  },
+
+  getDefaultCategories(): { name: string; code: string; description: string }[] {
+    return [
+      { name: 'Top Tier Prizes', code: 'A', description: 'First, second, and third place prizes' },
+      { name: 'Performance Awards', code: 'B', description: 'Special recognition and performance-based awards' },
+      { name: 'Participation Prizes', code: 'C', description: 'Certificates and medals for all participants' }
+    ]
+  },
+
+  generateCategoryCode(name: string, existingCodes: string[]): string {
+    // Try first letter first
+    const firstLetter = name.trim().charAt(0).toUpperCase()
+    if (!existingCodes.includes(firstLetter)) {
+      return firstLetter
+    }
+
+    // Try other letters from the name
+    for (const char of name.toUpperCase()) {
+      if (char.match(/[A-Z]/) && !existingCodes.includes(char)) {
+        return char
+      }
+    }
+
+    // Find first available letter A-Z
+    for (let i = 65; i <= 90; i++) { // A-Z ASCII codes
+      const letter = String.fromCharCode(i)
+      if (!existingCodes.includes(letter)) {
+        return letter
+      }
+    }
+
+    throw new Error('No available category codes')
+  }
+}

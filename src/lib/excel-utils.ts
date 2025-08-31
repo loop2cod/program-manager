@@ -272,3 +272,291 @@ export function exportProgramsToExcel(programs: ProgramExportData[], filename?: 
   const blob = new Blob([wbout], { type: 'application/octet-stream' })
   saveAs(blob, exportFilename)
 }
+
+// Prize-related interfaces and functions
+export interface PrizeUploadData {
+  prizeName: string
+  imageUrl?: string
+  category: string
+  description?: string
+  averageValue?: number
+}
+
+export interface PrizeExportData {
+  prizeName: string
+  imageUrl?: string
+  category: string
+  description?: string
+  averageValue?: number
+  createdAt?: string
+}
+
+// Download prize template
+export function downloadPrizeTemplate() {
+  const sampleData = [
+    {
+      'Prize Name': 'FIRST PRIZE TROPHY',
+      'Image URL': 'https://example.com/images/trophy1.jpg',
+      'Category': 'A',
+      'Average Value': 150.00,
+      'Description': 'Gold trophy for first place winners'
+    },
+    {
+      'Prize Name': 'SECOND PRIZE MEDAL',
+      'Image URL': 'https://example.com/images/medal2.jpg',
+      'Category': 'A',
+      'Average Value': 100.00,
+      'Description': 'Silver medal for second place winners'
+    },
+    {
+      'Prize Name': 'THIRD PRIZE CERTIFICATE',
+      'Image URL': 'https://example.com/images/certificate3.jpg',
+      'Category': 'A',
+      'Average Value': 50.00,
+      'Description': 'Certificate for third place winners'
+    },
+    {
+      'Prize Name': 'PARTICIPATION MEDAL',
+      'Image URL': 'https://example.com/images/participation.jpg',
+      'Category': 'B',
+      'Average Value': 25.00,
+      'Description': 'Medal for all participants'
+    },
+    {
+      'Prize Name': 'BEST PERFORMER TROPHY',
+      'Image URL': 'https://example.com/images/best-performer.jpg',
+      'Category': 'B',
+      'Average Value': 200.00,
+      'Description': 'Special trophy for outstanding performance'
+    },
+    {
+      'Prize Name': 'ACHIEVEMENT CERTIFICATE',
+      'Image URL': '',
+      'Category': 'C',
+      'Average Value': '',
+      'Description': 'Certificate of achievement'
+    }
+  ]
+
+  // Create workbook
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.json_to_sheet(sampleData)
+
+  // Set column widths
+  const colWidths = [
+    { wch: 30 }, // Prize Name
+    { wch: 50 }, // Image URL
+    { wch: 10 }, // Category
+    { wch: 15 }, // Average Value
+    { wch: 40 }  // Description
+  ]
+  ws['!cols'] = colWidths
+
+  // Add worksheet to workbook
+  XLSX.utils.book_append_sheet(wb, ws, 'Prizes Template')
+
+  // Create instructions sheet
+  const instructions = [
+    { 'Instructions': 'How to use this prize template:' },
+    { 'Instructions': '' },
+    { 'Instructions': '1. Fill in the Prize Name (e.g., FIRST PRIZE TROPHY, MEDAL, CERTIFICATE)' },
+    { 'Instructions': '2. Add Image URL - web link to the prize image (optional)' },
+    { 'Instructions': '3. Set Category - single letter from A to J (e.g., A, B, C)' },
+    { 'Instructions': '4. Add Average Value - estimated monetary value (optional, numbers only)' },
+    { 'Instructions': '5. Add Description - brief description of the prize (optional)' },
+    { 'Instructions': '' },
+    { 'Instructions': 'Category Guidelines:' },
+    { 'Instructions': 'A = Top tier prizes (1st, 2nd, 3rd place)' },
+    { 'Instructions': 'B = Performance-based prizes (Best performer, Special awards)' },
+    { 'Instructions': 'C = Participation prizes (Certificates, Medals for all)' },
+    { 'Instructions': 'D-J = Custom categories as needed' },
+    { 'Instructions': '' },
+    { 'Instructions': 'Notes:' },
+    { 'Instructions': '- Prize names must be unique within each category' },
+    { 'Instructions': '- Image URL is optional but recommended for visual prizes' },
+    { 'Instructions': '- Category must be a single letter (A-J)' },
+    { 'Instructions': '- Keep prize names in UPPERCASE for consistency' },
+    { 'Instructions': '' },
+    { 'Instructions': 'Examples:' },
+    { 'Instructions': 'FIRST PRIZE TROPHY → Category A (Top prize)' },
+    { 'Instructions': 'PARTICIPATION MEDAL → Category C (Everyone gets)' },
+    { 'Instructions': 'BEST PERFORMER → Category B (Special recognition)' }
+  ]
+
+  const instructionWs = XLSX.utils.json_to_sheet(instructions)
+  instructionWs['!cols'] = [{ wch: 60 }]
+  XLSX.utils.book_append_sheet(wb, instructionWs, 'Instructions')
+
+  // Generate buffer and save
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([wbout], { type: 'application/octet-stream' })
+  saveAs(blob, 'prizes-template.xlsx')
+}
+
+// Parse prize Excel file
+export function parsePrizeExcelFile(file: File): Promise<PrizeUploadData[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer)
+        const workbook = XLSX.read(data, { type: 'array' })
+        
+        // Get the first worksheet
+        const worksheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[worksheetName]
+        
+        // Convert to JSON
+        const jsonData = XLSX.utils.sheet_to_json(worksheet) as Record<string, unknown>[]
+        
+        // Parse prizes
+        const prizes: PrizeUploadData[] = []
+        
+        jsonData.forEach((row) => {
+          const prizeName = row['Prize Name']?.toString()?.trim()
+          const imageUrl = row['Image URL']?.toString()?.trim()
+          const category = row['Category']?.toString()?.trim()?.toUpperCase()
+          const averageValue = row['Average Value'] ? parseFloat(row['Average Value'].toString()) : undefined
+          const description = row['Description']?.toString()?.trim()
+          
+          if (!prizeName || !category) {
+            return // Skip invalid rows
+          }
+          
+          prizes.push({
+            prizeName,
+            imageUrl: imageUrl || undefined,
+            category,
+            averageValue: averageValue && !isNaN(averageValue) ? averageValue : undefined,
+            description: description || undefined
+          })
+        })
+        
+        resolve(prizes)
+      } catch (error) {
+        reject(new Error('Failed to parse Excel file: ' + (error as Error).message))
+      }
+    }
+    
+    reader.onerror = () => {
+      reject(new Error('Failed to read file'))
+    }
+    
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+// Validate prize data
+export function validatePrizeData(prizes: PrizeUploadData[]): { isValid: boolean; errors: string[] } {
+  const errors: string[] = []
+  
+  if (prizes.length === 0) {
+    errors.push('No valid prizes found in the file')
+    return { isValid: false, errors }
+  }
+  
+  const validCategories = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+  
+  // Check for required fields and duplicates
+  const seenPrizes = new Map<string, number>()
+  
+  prizes.forEach((prize, index) => {
+    if (!prize.prizeName.trim()) {
+      errors.push(`Row ${index + 1}: Prize name is required`)
+    }
+    
+    if (!prize.category.trim()) {
+      errors.push(`Row ${index + 1}: Category is required`)
+    } else if (!validCategories.includes(prize.category.trim().toUpperCase())) {
+      errors.push(`Row ${index + 1}: Category must be a letter from A to J (got "${prize.category}")`)
+    }
+    
+    // Validate Image URL format if provided
+    if (prize.imageUrl && prize.imageUrl.trim()) {
+      const urlPattern = /^https?:\/\/.+/i
+      if (!urlPattern.test(prize.imageUrl.trim())) {
+        errors.push(`Row ${index + 1}: Image URL must be a valid HTTP/HTTPS URL`)
+      }
+    }
+    
+    // Validate Average Value if provided
+    if (prize.averageValue !== undefined && (isNaN(prize.averageValue) || prize.averageValue < 0)) {
+      errors.push(`Row ${index + 1}: Average Value must be a positive number`)
+    }
+    
+    // Check for duplicates within the file
+    if (prize.prizeName.trim() && prize.category.trim()) {
+      const key = `${prize.prizeName.trim().toLowerCase()}_${prize.category.trim().toUpperCase()}`
+      const previousRow = seenPrizes.get(key)
+      
+      if (previousRow !== undefined) {
+        errors.push(`Row ${index + 1}: Duplicate prize "${prize.prizeName}" in category "${prize.category}" (first seen in row ${previousRow + 1})`)
+      } else {
+        seenPrizes.set(key, index)
+      }
+    }
+  })
+  
+  return { isValid: errors.length === 0, errors }
+}
+
+// Export prizes to Excel
+export function exportPrizesToExcel(prizes: PrizeExportData[], filename?: string) {
+  if (prizes.length === 0) {
+    throw new Error('No prizes to export')
+  }
+
+  // Prepare data for export
+  const exportData = prizes.map(prize => ({
+    'Prize Name': prize.prizeName,
+    'Image URL': prize.imageUrl || '',
+    'Category': prize.category,
+    'Average Value': prize.averageValue || '',
+    'Description': prize.description || '',
+    'Created Date': prize.createdAt ? new Date(prize.createdAt).toLocaleDateString() : ''
+  }))
+
+  // Create workbook
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.json_to_sheet(exportData)
+
+  // Set column widths
+  const colWidths = [
+    { wch: 30 }, // Prize Name
+    { wch: 50 }, // Image URL
+    { wch: 10 }, // Category
+    { wch: 15 }, // Average Value
+    { wch: 40 }, // Description
+    { wch: 15 }  // Created Date
+  ]
+  ws['!cols'] = colWidths
+
+  // Add worksheet to workbook
+  XLSX.utils.book_append_sheet(wb, ws, 'Prizes Export')
+
+  // Create summary sheet
+  const categories = [...new Set(prizes.map(p => p.category))].sort()
+  const summary = categories.map(category => {
+    const categoryPrizes = prizes.filter(p => p.category === category)
+    return {
+      'Category': category,
+      'Prize Count': categoryPrizes.length,
+      'Prizes': categoryPrizes.map(p => p.prizeName).join(', ')
+    }
+  })
+
+  const summaryWs = XLSX.utils.json_to_sheet(summary)
+  summaryWs['!cols'] = [
+    { wch: 10 }, // Category
+    { wch: 15 }, // Prize Count
+    { wch: 80 }  // Prizes
+  ]
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary')
+
+  // Generate and download file
+  const exportFilename = filename || `prizes-export-${new Date().toISOString().split('T')[0]}.xlsx`
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([wbout], { type: 'application/octet-stream' })
+  saveAs(blob, exportFilename)
+}
