@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -136,15 +137,6 @@ export default function ProgramsPage() {
 
   const hasActiveFilters = selectedSection !== 'all' || searchQuery.trim() !== ''
 
-  // Group filtered programs by section
-  const programsBySection = filteredPrograms.reduce((acc, program) => {
-    const sectionCode = program.section?.code || 'Unknown'
-    if (!acc[sectionCode]) {
-      acc[sectionCode] = []
-    }
-    acc[sectionCode].push(program)
-    return acc
-  }, {} as Record<string, ProgramWithSection[]>)
 
   if (isLoading) {
     return (
@@ -336,48 +328,66 @@ export default function ProgramsPage() {
                 )}
               </div>
             ) : (
-              <div className="space-y-6">
-                {Object.entries(programsBySection).map(([sectionCode, sectionPrograms]) => {
-                  const section = sections.find(s => s.code === sectionCode)
-                  return (
-                    <div key={sectionCode} className="space-y-3">
-                      <div className="flex items-center gap-2 border-b pb-2">
-                        <h3 className="font-medium text-base">
-                          {section?.name || 'Unknown Section'}
-                        </h3>
-                        <Badge variant="outline" className="text-xs">
-                          {sectionCode}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          ({sectionPrograms.length} program{sectionPrograms.length !== 1 ? 's' : ''})
-                        </span>
-                      </div>
-                      
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                        {sectionPrograms.map((program) => (
-                          <div 
-                            key={program.id} 
-                            className="p-3 bg-gray-50 rounded-md border border-gray-100 hover:border-gray-200 transition-colors"
-                          >
+              <div className="rounded-md border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[250px]">Program Name</TableHead>
+                        <TableHead className="w-[120px]">Section</TableHead>
+                        <TableHead className="w-[100px]">Code</TableHead>
+                        <TableHead className="min-w-[200px]">Description</TableHead>
+                        <TableHead className="w-[120px]">Created</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredPrograms
+                        .sort((a, b) => {
+                          // First sort by section name, then by program name
+                          const sectionCompare = (a.section?.name || 'ZZZ').localeCompare(b.section?.name || 'ZZZ')
+                          if (sectionCompare !== 0) return sectionCompare
+                          return a.name.localeCompare(b.name)
+                        })
+                        .map((program) => (
+                        <TableRow key={program.id} className="hover:bg-muted/50">
+                          <TableCell className="font-medium">
+                            {program.name}
+                          </TableCell>
+                          <TableCell>
                             <div className="space-y-1">
-                              <h4 className="font-medium text-sm">{program.name}</h4>
-                              {program.description && (
-                                <p className="text-xs text-muted-foreground line-clamp-2">
-                                  {program.description}
-                                </p>
-                              )}
-                              <div className="flex items-center justify-between pt-1">
-                                <span className="text-xs text-muted-foreground">
-                                  {program.created_at && new Date(program.created_at).toLocaleDateString()}
-                                </span>
+                              <div className="text-sm">
+                                {program.section?.name || 'Unknown'}
                               </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )
-                })}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs">
+                              {program.section?.code || 'N/A'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {program.description ? (
+                              <div className="text-sm text-muted-foreground max-w-[300px] truncate" title={program.description}>
+                                {program.description}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs text-muted-foreground">
+                              {program.created_at && new Date(program.created_at).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                              })}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             )}
           </CardContent>
