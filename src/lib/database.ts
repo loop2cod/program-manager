@@ -743,7 +743,9 @@ export const studentsService = {
     const { data, error } = await supabase
       .from('students_view')
       .select('*')
-      .order('chest_no', { ascending: true })
+      .order('section_code', { ascending: true })
+      .order('program_name', { ascending: true })
+      .order('name', { ascending: true })
 
     if (error) {
       console.error('Error fetching students:', error)
@@ -758,7 +760,8 @@ export const studentsService = {
       .from('students_view')
       .select('*')
       .eq('section_id', sectionId)
-      .order('chest_no', { ascending: true })
+      .order('program_name', { ascending: true })
+      .order('name', { ascending: true })
 
     if (error) {
       console.error('Error fetching students by section:', error)

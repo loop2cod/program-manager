@@ -18,6 +18,7 @@ import {
   type ProgramWithSection
 } from '@/lib/database'
 import { Plus, Trash2, Users, User, Download, Upload, FileText } from 'lucide-react'
+import Link from 'next/link'
 import { 
   downloadStudentSampleTemplate, 
   parseStudentUploadFile, 
@@ -35,6 +36,15 @@ export default function AddStudentsPage() {
   const [programs, setPrograms] = useState<ProgramWithSection[]>([])
   const [filteredPrograms, setFilteredPrograms] = useState<ProgramWithSection[]>([])
   const [activeTab, setActiveTab] = useState<'add' | 'bulk-upload' | 'all-students'>('add')
+
+  // Handle URL tab parameter
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const tab = urlParams.get('tab')
+    if (tab === 'all-students' || tab === 'bulk-upload' || tab === 'add') {
+      setActiveTab(tab)
+    }
+  }, [])
   
   // New student state
   const [newStudent, setNewStudent] = useState({
@@ -53,6 +63,11 @@ export default function AddStudentsPage() {
   } | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+
+  // Filtering state for All Students tab
+  const [selectedSectionFilter, setSelectedSectionFilter] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filteredStudents, setFilteredStudents] = useState<StudentWithDetails[]>([])
 
   // Load initial data
   const loadInitialData = useCallback(async () => {
@@ -93,6 +108,30 @@ export default function AddStudentsPage() {
       setNewStudent(prev => ({ ...prev, programId: '' }))
     }
   }, [newStudent.sectionId, programs])
+
+  // Filter students when section filter or search query changes
+  useEffect(() => {
+    let filtered = students
+
+    // Filter by section
+    if (selectedSectionFilter !== 'all') {
+      filtered = filtered.filter(student => student.section_id === selectedSectionFilter)
+    }
+
+    // Filter by search query (searches in student name, section name, section code, program name)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      filtered = filtered.filter(student => 
+        student.name.toLowerCase().includes(query) ||
+        student.section_name.toLowerCase().includes(query) ||
+        student.section_code.toLowerCase().includes(query) ||
+        student.program_name.toLowerCase().includes(query) ||
+        student.chest_no.toLowerCase().includes(query)
+      )
+    }
+
+    setFilteredStudents(filtered)
+  }, [students, selectedSectionFilter, searchQuery])
 
   const addStudent = async () => {
     const chestNo = newStudent.chestNo.trim()
@@ -259,12 +298,12 @@ export default function AddStudentsPage() {
     try {
       setIsExporting(true)
       
-      if (students.length === 0) {
+      if (filteredStudents.length === 0) {
         toast.error('No students to export')
         return
       }
 
-      const exportData: StudentExportData[] = students.map(student => ({
+      const exportData: StudentExportData[] = filteredStudents.map(student => ({
         chestNo: student.chest_no,
         studentName: student.name,
         sectionCode: student.section_code,
@@ -279,8 +318,12 @@ export default function AddStudentsPage() {
           : 'N/A'
       }))
 
-      exportStudentsToExcel(exportData)
-      toast.success(`${students.length} students exported successfully!`)
+      const filename = selectedSectionFilter !== 'all' 
+        ? `${sections.find(s => s.id === selectedSectionFilter)?.code || 'filtered'}-students-export.xlsx`
+        : 'students-export.xlsx'
+
+      exportStudentsToExcel(exportData, filename)
+      toast.success(`${filteredStudents.length} students exported successfully!`)
     } catch (error) {
       console.error('Error exporting students:', error)
       toast.error('Failed to export students')
@@ -569,48 +612,94 @@ export default function AddStudentsPage() {
       {activeTab === 'all-students' && (
         <div className="space-y-4">
           {/* Export Button */}
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="text-lg font-semibold">All Students</h3>
-              <p className="text-sm text-muted-foreground">
-                {students.length} students registered
-              </p>
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">All Students</h3>
+                <p className="text-sm text-muted-foreground">
+                  {filteredStudents.length} students 
+                  {selectedSectionFilter !== 'all' && ` in ${sections.find(s => s.id === selectedSectionFilter)?.name}`}
+                  {(searchQuery.trim() || selectedSectionFilter !== 'all') && filteredStudents.length !== students.length && ` (${students.length} total)`}
+                </p>
+              </div>
+              <Button
+                onClick={handleExportStudents}
+                variant="outline"
+                size="sm"
+                className="h-9"
+                disabled={isExporting || filteredStudents.length === 0}
+              >
+                <Download className="mr-1.5 h-3 w-3" />
+                {isExporting ? 'Exporting...' : `Export (${filteredStudents.length})`}
+              </Button>
             </div>
-            <Button
-              onClick={handleExportStudents}
-              variant="outline"
-              size="sm"
-              className="h-9"
-              disabled={isExporting || students.length === 0}
-            >
-              <Download className="mr-1.5 h-3 w-3" />
-              {isExporting ? 'Exporting...' : 'Export All'}
-            </Button>
+            
+            {/* Search and Filter Controls */}
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <Input
+                  placeholder="Search by name, chest no., section, or program..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+              <div className="flex gap-2 items-center">
+              <Select
+                value={selectedSectionFilter}
+                onValueChange={setSelectedSectionFilter}
+              >
+                <SelectTrigger className="w-48 h-9">
+                  <SelectValue placeholder="Filter by section" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sections</SelectItem>
+                  {sections.map((section) => (
+                    <SelectItem key={section.id} value={section.id}>
+                      <div className="flex items-center gap-2">
+                        <span>{section.name}</span>
+                        <Badge variant="outline" className="text-xs">
+                          {section.code}
+                        </Badge>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {(searchQuery.trim() || selectedSectionFilter !== 'all') && (
+                <Button
+                  onClick={() => {
+                    setSearchQuery('')
+                    setSelectedSectionFilter('all')
+                  }}
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 px-2"
+                >
+                  Clear
+                </Button>
+              )}
+              </div>
+            </div>
           </div>
 
           {/* Students List */}
-      <Card className="shadow-sm">
-        <CardHeader className="pb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-lg">All Students</CardTitle>
-              <CardDescription className="text-sm">
-                {students.length} students registered
-              </CardDescription>
-            </div>
-            <Badge variant="secondary">
-              <Users className="mr-1 h-3 w-3" />
-              {students.length}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {students.length === 0 ? (
+          <Card className="shadow-sm">
+            <CardContent className="pt-6">
+              {filteredStudents.length === 0 ? (
             <div className="text-center py-8">
               <User className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No students registered yet</p>
+              <p className="text-muted-foreground">
+                {selectedSectionFilter !== 'all' 
+                  ? `No students found in ${sections.find(s => s.id === selectedSectionFilter)?.name}`
+                  : 'No students registered yet'
+                }
+              </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Add your first student to get started
+                {selectedSectionFilter !== 'all'
+                  ? 'Try selecting a different section or add students to this section'
+                  : 'Add your first student to get started'
+                }
               </p>
             </div>
           ) : (
@@ -628,7 +717,7 @@ export default function AddStudentsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {students.map((student) => (
+                    {filteredStudents.map((student) => (
                       <TableRow key={student.id} className="hover:bg-muted/50">
                         <TableCell className="font-medium">
                           <Badge variant="outline">
@@ -636,7 +725,12 @@ export default function AddStudentsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="font-medium">
-                          {student.name}
+                          <Link 
+                            href={`/dashboard/students/${student.id}`}
+                            className="text-blue-600 hover:text-blue-800 hover:underline"
+                          >
+                            {student.name}
+                          </Link>
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
@@ -676,9 +770,9 @@ export default function AddStudentsPage() {
                 </Table>
               </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
         </div>
       )}
     </div>
