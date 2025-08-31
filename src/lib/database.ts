@@ -717,3 +717,139 @@ export const assignmentUtils = {
     return !!data
   }
 }
+
+// Student interfaces
+export interface Student {
+  id: string
+  chest_no: string
+  name: string
+  section_id: string
+  program_id: string
+  created_at?: string
+  updated_at?: string
+  user_id?: string
+}
+
+export interface StudentWithDetails extends Student {
+  section_name: string
+  section_code: string
+  program_name: string
+  program_description?: string
+}
+
+// Student operations
+export const studentsService = {
+  async getAll(): Promise<StudentWithDetails[]> {
+    const { data, error } = await supabase
+      .from('students_view')
+      .select('*')
+      .order('chest_no', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching students:', error)
+      throw new Error(`Failed to fetch students: ${error.message}`)
+    }
+
+    return data || []
+  },
+
+  async getBySection(sectionId: string): Promise<StudentWithDetails[]> {
+    const { data, error } = await supabase
+      .from('students_view')
+      .select('*')
+      .eq('section_id', sectionId)
+      .order('chest_no', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching students by section:', error)
+      throw new Error(`Failed to fetch students: ${error.message}`)
+    }
+
+    return data || []
+  },
+
+  async create(student: {
+    chest_no: string
+    name: string
+    section_id: string
+    program_id: string
+  }): Promise<Student> {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('User not authenticated')
+
+    const { data, error } = await supabase
+      .from('students')
+      .insert({
+        ...student,
+        user_id: user.id
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error creating student:', error)
+      if (error.code === '23505') {
+        throw new Error('A student with this chest number already exists')
+      }
+      throw new Error(`Failed to create student: ${error.message}`)
+    }
+
+    return data
+  },
+
+  async update(id: string, updates: Partial<{
+    chest_no: string
+    name: string
+    section_id: string
+    program_id: string
+  }>): Promise<Student> {
+    const { data, error } = await supabase
+      .from('students')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating student:', error)
+      if (error.code === '23505') {
+        throw new Error('A student with this chest number already exists')
+      }
+      throw new Error(`Failed to update student: ${error.message}`)
+    }
+
+    return data
+  },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('students')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error deleting student:', error)
+      throw new Error(`Failed to delete student: ${error.message}`)
+    }
+  },
+
+  async checkChestNoExists(chestNo: string, excludeId?: string): Promise<boolean> {
+    let query = supabase
+      .from('students')
+      .select('id')
+      .eq('chest_no', chestNo)
+
+    if (excludeId) {
+      query = query.neq('id', excludeId)
+    }
+
+    const { data, error } = await query.single()
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('Error checking chest number existence:', error)
+      return false
+    }
+
+    return !!data
+  }
+}

@@ -560,3 +560,253 @@ export function exportPrizesToExcel(prizes: PrizeExportData[], filename?: string
   const blob = new Blob([wbout], { type: 'application/octet-stream' })
   saveAs(blob, exportFilename)
 }
+
+// Student Upload/Export interfaces and functions
+export interface StudentUploadData {
+  chestNo: string
+  studentName: string
+  sectionCode: string
+  programName: string
+}
+
+export interface StudentExportData {
+  chestNo: string
+  studentName: string
+  sectionCode: string
+  sectionName: string
+  programName: string
+  registeredDate: string
+}
+
+// Download student sample template
+export function downloadStudentSampleTemplate() {
+  const sampleData = [
+    {
+      'Chest No.': 'CH001',
+      'Student Name': 'Ahmed Ali',
+      'Section Code': 'JB',
+      'Program': 'BURDA'
+    },
+    {
+      'Chest No.': 'CH002',
+      'Student Name': 'Fatima Hassan',
+      'Section Code': 'JB',
+      'Program': 'HAND CRAFT'
+    },
+    {
+      'Chest No.': 'CH003',
+      'Student Name': 'Mohammed Yusuf',
+      'Section Code': 'K1B',
+      'Program': 'HAND WRITING ARABIMALAYALAM'
+    },
+    {
+      'Chest No.': 'CH004',
+      'Student Name': 'Zainab Ibrahim',
+      'Section Code': 'K1G',
+      'Program': 'PAINTING'
+    },
+    {
+      'Chest No.': 'CH005',
+      'Student Name': 'Omar Abdullah',
+      'Section Code': 'K1B',
+      'Program': 'HIFZ'
+    }
+  ]
+
+  const ws = XLSX.utils.json_to_sheet(sampleData)
+  
+  // Set column widths
+  ws['!cols'] = [
+    { wch: 12 }, // Chest No.
+    { wch: 20 }, // Student Name
+    { wch: 15 }, // Section Code
+    { wch: 25 }  // Program
+  ]
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Students')
+
+  // Add instructions sheet
+  const instructions = [
+    { 'Field': 'Chest No.', 'Description': 'Unique chest number for the student (e.g., CH001, ST001)', 'Required': 'Yes' },
+    { 'Field': 'Student Name', 'Description': 'Full name of the student', 'Required': 'Yes' },
+    { 'Field': 'Section Code', 'Description': 'Section code that exists in your system (e.g., JB, K1B, K1G)', 'Required': 'Yes' },
+    { 'Field': 'Program', 'Description': 'Program name that exists in the selected section', 'Required': 'Yes' }
+  ]
+
+  const instructionsWs = XLSX.utils.json_to_sheet(instructions)
+  instructionsWs['!cols'] = [
+    { wch: 15 }, // Field
+    { wch: 60 }, // Description
+    { wch: 10 }  // Required
+  ]
+  XLSX.utils.book_append_sheet(wb, instructionsWs, 'Instructions')
+
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([wbout], { type: 'application/octet-stream' })
+  saveAs(blob, 'student-upload-sample.xlsx')
+}
+
+// Parse student upload file
+export function parseStudentUploadFile(file: File): Promise<StudentUploadData[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer)
+        const workbook = XLSX.read(data, { type: 'array' })
+        
+        // Get the first worksheet
+        const worksheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[worksheetName]
+        
+        // Convert to JSON
+        const jsonData = XLSX.utils.sheet_to_json(worksheet) as Record<string, unknown>[]
+        
+        // Parse students
+        const students: StudentUploadData[] = []
+        
+        jsonData.forEach((row) => {
+          const chestNo = row['Chest No.']?.toString()?.trim()
+          const studentName = row['Student Name']?.toString()?.trim()
+          const sectionCode = row['Section Code']?.toString()?.trim()
+          const programName = row['Program']?.toString()?.trim()
+          
+          if (!chestNo || !studentName || !sectionCode || !programName) {
+            return // Skip invalid rows
+          }
+          
+          students.push({
+            chestNo,
+            studentName,
+            sectionCode,
+            programName
+          })
+        })
+        
+        resolve(students)
+      } catch (error) {
+        reject(new Error('Failed to parse Excel file: ' + (error as Error).message))
+      }
+    }
+    
+    reader.onerror = () => {
+      reject(new Error('Failed to read file'))
+    }
+    
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+// Validate student data
+export function validateStudentData(
+  students: StudentUploadData[], 
+  availableSections: Array<{ code: string; name: string; id: string }>,
+  availablePrograms: Array<{ name: string; section_id: string; id: string }>
+): { isValid: boolean; errors: string[] } {
+  const errors: string[] = []
+  
+  if (students.length === 0) {
+    errors.push('No valid students found in the file')
+    return { isValid: false, errors }
+  }
+
+  const seenChestNos = new Map<string, number>()
+  
+  students.forEach((student, index) => {
+    // Validate chest number
+    if (!student.chestNo.trim()) {
+      errors.push(`Row ${index + 1}: Chest number is required`)
+    }
+    
+    // Validate student name
+    if (!student.studentName.trim()) {
+      errors.push(`Row ${index + 1}: Student name is required`)
+    }
+    
+    // Validate section code exists
+    const section = availableSections.find(s => s.code.toUpperCase() === student.sectionCode.toUpperCase())
+    if (!section) {
+      errors.push(`Row ${index + 1}: Section code "${student.sectionCode}" does not exist`)
+    } else {
+      // Validate program exists in the section
+      const program = availablePrograms.find(p => 
+        p.name.toLowerCase() === student.programName.toLowerCase() && 
+        p.section_id === section.id
+      )
+      if (!program) {
+        errors.push(`Row ${index + 1}: Program "${student.programName}" does not exist in section "${student.sectionCode}"`)
+      }
+    }
+    
+    // Check for duplicate chest numbers within the file
+    if (student.chestNo.trim()) {
+      const key = student.chestNo.trim().toUpperCase()
+      const previousRow = seenChestNos.get(key)
+      
+      if (previousRow !== undefined) {
+        errors.push(`Row ${index + 1}: Duplicate chest number "${student.chestNo}" (first seen in row ${previousRow + 1})`)
+      } else {
+        seenChestNos.set(key, index)
+      }
+    }
+  })
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  }
+}
+
+// Export students to Excel
+export function exportStudentsToExcel(students: StudentExportData[], filename?: string) {
+  const ws = XLSX.utils.json_to_sheet(students.map(student => ({
+    'Chest No.': student.chestNo,
+    'Student Name': student.studentName,
+    'Section Code': student.sectionCode,
+    'Section Name': student.sectionName,
+    'Program': student.programName,
+    'Registered Date': student.registeredDate
+  })))
+
+  // Set column widths
+  ws['!cols'] = [
+    { wch: 12 }, // Chest No.
+    { wch: 25 }, // Student Name
+    { wch: 15 }, // Section Code
+    { wch: 25 }, // Section Name
+    { wch: 30 }, // Program
+    { wch: 15 }  // Registered Date
+  ]
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Students')
+
+  // Add summary sheet
+  const sections = [...new Set(students.map(s => s.sectionCode))]
+  const summary = sections.map(sectionCode => {
+    const sectionStudents = students.filter(s => s.sectionCode === sectionCode)
+    return {
+      'Section Code': sectionCode,
+      'Section Name': sectionStudents[0]?.sectionName || 'N/A',
+      'Student Count': sectionStudents.length,
+      'Programs': [...new Set(sectionStudents.map(s => s.programName))].join(', ')
+    }
+  })
+
+  const summaryWs = XLSX.utils.json_to_sheet(summary)
+  summaryWs['!cols'] = [
+    { wch: 15 }, // Section Code
+    { wch: 25 }, // Section Name
+    { wch: 15 }, // Student Count
+    { wch: 60 }  // Programs
+  ]
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary')
+
+  // Generate and download file
+  const exportFilename = filename || `students-export-${new Date().toISOString().split('T')[0]}.xlsx`
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([wbout], { type: 'application/octet-stream' })
+  saveAs(blob, exportFilename)
+}
