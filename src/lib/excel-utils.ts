@@ -810,3 +810,97 @@ export function exportStudentsToExcel(students: StudentExportData[], filename?: 
   const blob = new Blob([wbout], { type: 'application/octet-stream' })
   saveAs(blob, exportFilename)
 }
+
+// Program with participants export interfaces
+export interface ProgramWithParticipantsExportData {
+  programName: string
+  sectionCode: string
+  sectionName: string
+  participantCount: number
+  description?: string
+  createdAt: string
+}
+
+// Export programs with participant counts to Excel
+export function exportProgramsWithParticipantsToExcel(
+  programs: ProgramWithParticipantsExportData[], 
+  filename?: string
+) {
+  // Main programs data
+  const ws = XLSX.utils.json_to_sheet(programs.map(program => ({
+    'Program Name': program.programName,
+    'Section Code': program.sectionCode,
+    'Section Name': program.sectionName,
+    'Participants': program.participantCount,
+    'Description': program.description || '',
+    'Created Date': program.createdAt
+  })))
+
+  // Set column widths
+  ws['!cols'] = [
+    { wch: 30 }, // Program Name
+    { wch: 15 }, // Section Code
+    { wch: 25 }, // Section Name
+    { wch: 12 }, // Participants
+    { wch: 40 }, // Description
+    { wch: 15 }  // Created Date
+  ]
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Programs')
+
+  // Add summary sheet by section
+  const sections = [...new Set(programs.map(p => p.sectionCode))]
+  const sectionSummary = sections.map(sectionCode => {
+    const sectionPrograms = programs.filter(p => p.sectionCode === sectionCode)
+    const totalParticipants = sectionPrograms.reduce((sum, p) => sum + p.participantCount, 0)
+    
+    return {
+      'Section Code': sectionCode,
+      'Section Name': sectionPrograms[0]?.sectionName || 'N/A',
+      'Total Programs': sectionPrograms.length,
+      'Total Participants': totalParticipants,
+      'Avg Participants': sectionPrograms.length > 0 ? Math.round(totalParticipants / sectionPrograms.length * 100) / 100 : 0,
+      'Programs': sectionPrograms.map(p => p.programName).join(', ')
+    }
+  })
+
+  const summaryWs = XLSX.utils.json_to_sheet(sectionSummary)
+  summaryWs['!cols'] = [
+    { wch: 15 }, // Section Code
+    { wch: 25 }, // Section Name
+    { wch: 15 }, // Total Programs
+    { wch: 18 }, // Total Participants
+    { wch: 18 }, // Avg Participants
+    { wch: 60 }  // Programs
+  ]
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'Section Summary')
+
+  // Add overall statistics sheet
+  const totalPrograms = programs.length
+  const totalParticipants = programs.reduce((sum, p) => sum + p.participantCount, 0)
+  const programsWithParticipants = programs.filter(p => p.participantCount > 0).length
+  const programsWithoutParticipants = programs.filter(p => p.participantCount === 0).length
+  
+  const statistics = [
+    { 'Metric': 'Total Programs', 'Value': totalPrograms },
+    { 'Metric': 'Total Participants', 'Value': totalParticipants },
+    { 'Metric': 'Programs with Participants', 'Value': programsWithParticipants },
+    { 'Metric': 'Programs without Participants', 'Value': programsWithoutParticipants },
+    { 'Metric': 'Average Participants per Program', 'Value': totalPrograms > 0 ? Math.round(totalParticipants / totalPrograms * 100) / 100 : 0 },
+    { 'Metric': 'Total Sections', 'Value': sections.length }
+  ]
+
+  const statsWs = XLSX.utils.json_to_sheet(statistics)
+  statsWs['!cols'] = [
+    { wch: 30 }, // Metric
+    { wch: 20 }  // Value
+  ]
+  XLSX.utils.book_append_sheet(wb, statsWs, 'Statistics')
+
+  // Generate and download file
+  const exportFilename = filename || `programs-with-participants-${new Date().toISOString().split('T')[0]}.xlsx`
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([wbout], { type: 'application/octet-stream' })
+  saveAs(blob, exportFilename)
+}

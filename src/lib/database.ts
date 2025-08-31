@@ -853,3 +853,54 @@ export const studentsService = {
     return !!data
   }
 }
+
+// Program with participant count interface
+export interface ProgramWithParticipants extends ProgramWithSection {
+  participant_count: number
+}
+
+// Get programs with participant counts
+export const getProgramsWithParticipants = async (): Promise<ProgramWithParticipants[]> => {
+  try {
+    // Get all programs with sections
+    const { data: programs, error: programsError } = await supabase
+      .from('programs')
+      .select(`
+        *,
+        section:sections(code, name)
+      `)
+      .order('name', { ascending: true })
+
+    if (programsError) {
+      throw programsError
+    }
+
+    // Get student counts for each program
+    const programsWithCounts = await Promise.all(
+      (programs || []).map(async (program) => {
+        const { data: students, error: countError } = await supabase
+          .from('students')
+          .select('id')
+          .eq('program_id', program.id)
+
+        if (countError) {
+          console.error('Error counting students for program:', program.id, countError)
+        }
+
+        return {
+          ...program,
+          section: program.section ? {
+            code: program.section.code,
+            name: program.section.name
+          } : null,
+          participant_count: students ? students.length : 0
+        }
+      })
+    )
+
+    return programsWithCounts as ProgramWithParticipants[]
+  } catch (error) {
+    console.error('Error fetching programs with participants:', error)
+    throw new Error(`Failed to fetch programs: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}

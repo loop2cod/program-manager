@@ -9,20 +9,33 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Plus, Loader2, Download, Filter, X } from 'lucide-react'
-import { programsService, sectionsService, type ProgramWithSection, type Section } from '@/lib/database'
-import { exportProgramsToExcel, type ProgramExportData } from '@/lib/excel-utils'
+import { 
+  programsService, 
+  sectionsService, 
+  getProgramsWithParticipants,
+  type ProgramWithSection, 
+  type ProgramWithParticipants,
+  type Section 
+} from '@/lib/database'
+import { 
+  exportProgramsToExcel, 
+  exportProgramsWithParticipantsToExcel,
+  type ProgramExportData,
+  type ProgramWithParticipantsExportData 
+} from '@/lib/excel-utils'
 import { toast } from 'sonner'
 
 export default function ProgramsPage() {
-  const [programs, setPrograms] = useState<ProgramWithSection[]>([])
+  const [programs, setPrograms] = useState<ProgramWithParticipants[]>([])
   const [sections, setSections] = useState<Section[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isExporting, setIsExporting] = useState(false)
+  const [isExportingWithParticipants, setIsExportingWithParticipants] = useState(false)
   
   // Filtering state
   const [selectedSection, setSelectedSection] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [filteredPrograms, setFilteredPrograms] = useState<ProgramWithSection[]>([])
+  const [filteredPrograms, setFilteredPrograms] = useState<ProgramWithParticipants[]>([])
 
   // Filter programs function - defined before useEffect
   const filterPrograms = useCallback(() => {
@@ -51,7 +64,7 @@ export default function ProgramsPage() {
     try {
       setIsLoading(true)
       const [programsData, sectionsData] = await Promise.all([
-        programsService.getAll(),
+        getProgramsWithParticipants(),
         sectionsService.getAll()
       ])
       setPrograms(programsData)
@@ -130,6 +143,44 @@ export default function ProgramsPage() {
     }
   }
 
+  const handleExportWithParticipants = async () => {
+    try {
+      setIsExportingWithParticipants(true)
+      
+      if (filteredPrograms.length === 0) {
+        toast.error('No programs to export with current filters')
+        return
+      }
+
+      const exportData: ProgramWithParticipantsExportData[] = filteredPrograms.map(program => ({
+        programName: program.name,
+        sectionCode: program.section?.code || 'Unknown',
+        sectionName: program.section?.name || 'Unknown',
+        participantCount: program.participant_count,
+        description: program.description,
+        createdAt: program.created_at 
+          ? new Date(program.created_at).toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric'
+            })
+          : 'N/A'
+      }))
+
+      const filename = selectedSection !== 'all' 
+        ? `${sections.find(s => s.id === selectedSection)?.code || 'filtered'}-programs-with-participants.xlsx`
+        : 'programs-with-participants.xlsx'
+
+      exportProgramsWithParticipantsToExcel(exportData, filename)
+      toast.success(`${filteredPrograms.length} programs with participant data exported successfully!`)
+    } catch (error) {
+      console.error('Error exporting programs with participants:', error)
+      toast.error('Failed to export programs with participants')
+    } finally {
+      setIsExportingWithParticipants(false)
+    }
+  }
+
   const clearFilters = () => {
     setSelectedSection('all')
     setSearchQuery('')
@@ -175,7 +226,7 @@ export default function ProgramsPage() {
             variant="outline" 
             size="sm" 
             className="h-9"
-            disabled={isExporting || programs.length === 0}
+            disabled={isExporting || isExportingWithParticipants || programs.length === 0}
           >
             <Download className="mr-1.5 h-3 w-3" />
             {isExporting ? 'Exporting...' : 'Export All'}
@@ -256,10 +307,20 @@ export default function ProgramsPage() {
                   variant="outline"
                   size="sm"
                   className="h-9"
-                  disabled={isExporting || filteredPrograms.length === 0}
+                  disabled={isExporting || isExportingWithParticipants || filteredPrograms.length === 0}
                 >
                   <Download className="mr-1.5 h-3 w-3" />
-                  Export Filtered ({filteredPrograms.length})
+                  {isExporting ? 'Exporting...' : `Export Filtered (${filteredPrograms.length})`}
+                </Button>
+                <Button
+                  onClick={handleExportWithParticipants}
+                  variant="default"
+                  size="sm"
+                  className="h-9"
+                  disabled={isExporting || isExportingWithParticipants || filteredPrograms.length === 0}
+                >
+                  <Download className="mr-1.5 h-3 w-3" />
+                  {isExportingWithParticipants ? 'Exporting...' : `Export with Participants (${filteredPrograms.length})`}
                 </Button>
               </div>
             </div>
@@ -336,6 +397,7 @@ export default function ProgramsPage() {
                         <TableHead className="w-[250px]">Program Name</TableHead>
                         <TableHead className="w-[120px]">Section</TableHead>
                         <TableHead className="w-[100px]">Code</TableHead>
+                        <TableHead className="w-[120px]">Participants</TableHead>
                         <TableHead className="min-w-[200px]">Description</TableHead>
                         <TableHead className="w-[120px]">Created</TableHead>
                       </TableRow>
@@ -364,6 +426,16 @@ export default function ProgramsPage() {
                             <Badge variant="outline" className="text-xs">
                               {program.section?.code || 'N/A'}
                             </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center">
+                              <Badge 
+                                variant={program.participant_count > 0 ? "default" : "secondary"} 
+                                className="text-xs"
+                              >
+                                {program.participant_count}
+                              </Badge>
+                            </div>
                           </TableCell>
                           <TableCell>
                             {program.description ? (
