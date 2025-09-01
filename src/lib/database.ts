@@ -789,7 +789,13 @@ export const studentsService = {
     if (error) {
       console.error('Error creating student:', error)
       if (error.code === '23505') {
-        throw new Error('A student with this chest number already exists')
+        if (error.message.includes('students_chest_no_user_id_key')) {
+          throw new Error('Database constraint error: Please run the migration to allow students in multiple programs. See MIGRATION-INSTRUCTIONS.md')
+        } else if (error.message.includes('students_chest_no_program_user_unique')) {
+          throw new Error('This student is already registered for this program')
+        } else {
+          throw new Error('A student with this chest number already exists')
+        }
       }
       throw new Error(`Failed to create student: ${error.message}`)
     }
@@ -813,7 +819,13 @@ export const studentsService = {
     if (error) {
       console.error('Error updating student:', error)
       if (error.code === '23505') {
-        throw new Error('A student with this chest number already exists')
+        if (error.message.includes('students_chest_no_user_id_key')) {
+          throw new Error('Database constraint error: Please run the migration to allow students in multiple programs. See MIGRATION-INSTRUCTIONS.md')
+        } else if (error.message.includes('students_chest_no_program_user_unique')) {
+          throw new Error('This student is already registered for this program')
+        } else {
+          throw new Error('A student with this chest number already exists')
+        }
       }
       throw new Error(`Failed to update student: ${error.message}`)
     }
@@ -847,6 +859,27 @@ export const studentsService = {
 
     if (error && error.code !== 'PGRST116') {
       console.error('Error checking chest number existence:', error)
+      return false
+    }
+
+    return !!data
+  },
+
+  async checkStudentProgramExists(chestNo: string, programId: string, excludeId?: string): Promise<boolean> {
+    let query = supabase
+      .from('students')
+      .select('id')
+      .eq('chest_no', chestNo)
+      .eq('program_id', programId)
+
+    if (excludeId) {
+      query = query.neq('id', excludeId)
+    }
+
+    const { data, error } = await query.single()
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('Error checking student program combination:', error)
       return false
     }
 

@@ -578,32 +578,32 @@ export interface StudentExportData {
 export function downloadStudentSampleTemplate() {
   const sampleData = [
     {
-      'Chest No.': 'CH001',
+      'Chest No.': '413',
       'Student Name': 'Ahmed Ali',
       'Section Code': 'JB',
       'Program': 'BURDA'
     },
     {
-      'Chest No.': 'CH002',
-      'Student Name': 'Fatima Hassan',
+      'Chest No.': '413',
+      'Student Name': 'Ahmed Ali',
       'Section Code': 'JB',
       'Program': 'HAND CRAFT'
     },
     {
-      'Chest No.': 'CH003',
-      'Student Name': 'Mohammed Yusuf',
+      'Chest No.': '414',
+      'Student Name': 'Fatima Hassan',
       'Section Code': 'K1B',
       'Program': 'HAND WRITING ARABIMALAYALAM'
     },
     {
-      'Chest No.': 'CH004',
-      'Student Name': 'Zainab Ibrahim',
+      'Chest No.': '414',
+      'Student Name': 'Fatima Hassan',
       'Section Code': 'K1G',
       'Program': 'PAINTING'
     },
     {
-      'Chest No.': 'CH005',
-      'Student Name': 'Omar Abdullah',
+      'Chest No.': '415',
+      'Student Name': 'Mohammed Yusuf',
       'Section Code': 'K1B',
       'Program': 'HIFZ'
     }
@@ -624,10 +624,14 @@ export function downloadStudentSampleTemplate() {
 
   // Add instructions sheet
   const instructions = [
-    { 'Field': 'Chest No.', 'Description': 'Unique chest number for the student (e.g., CH001, ST001)', 'Required': 'Yes' },
+    { 'Field': 'Chest No.', 'Description': 'Student chest number (e.g., 413, 414). Same student can appear multiple times for different programs.', 'Required': 'Yes' },
     { 'Field': 'Student Name', 'Description': 'Full name of the student', 'Required': 'Yes' },
     { 'Field': 'Section Code', 'Description': 'Section code that exists in your system (e.g., JB, K1B, K1G)', 'Required': 'Yes' },
-    { 'Field': 'Program', 'Description': 'Program name that exists in the selected section', 'Required': 'Yes' }
+    { 'Field': 'Program', 'Description': 'Program name that exists in the selected section', 'Required': 'Yes' },
+    { 'Field': '', 'Description': '', 'Required': '' },
+    { 'Field': 'IMPORTANT', 'Description': 'Same student can participate in multiple programs. Exact duplicate rows are automatically skipped.', 'Required': '' },
+    { 'Field': 'Example', 'Description': 'Student 413 can be in both BURDA and HAND CRAFT programs', 'Required': '' },
+    { 'Field': 'Note', 'Description': 'If same student, section, and program appear multiple times, only first entry is kept', 'Required': '' }
   ]
 
   const instructionsWs = XLSX.utils.json_to_sheet(instructions)
@@ -661,7 +665,7 @@ export function parseStudentUploadFile(file: File): Promise<StudentUploadData[]>
         const jsonData = XLSX.utils.sheet_to_json(worksheet) as Record<string, unknown>[]
         
         // Parse students
-        const students: StudentUploadData[] = []
+        const allStudents: StudentUploadData[] = []
         
         jsonData.forEach((row) => {
           const chestNo = row['Chest No.']?.toString()?.trim()
@@ -673,7 +677,7 @@ export function parseStudentUploadFile(file: File): Promise<StudentUploadData[]>
             return // Skip invalid rows
           }
           
-          students.push({
+          allStudents.push({
             chestNo,
             studentName,
             sectionCode,
@@ -681,7 +685,10 @@ export function parseStudentUploadFile(file: File): Promise<StudentUploadData[]>
           })
         })
         
-        resolve(students)
+        // Filter out exact duplicates
+        const uniqueStudents = filterExactDuplicateStudents(allStudents)
+        
+        resolve(uniqueStudents)
       } catch (error) {
         reject(new Error('Failed to parse Excel file: ' + (error as Error).message))
       }
@@ -693,6 +700,31 @@ export function parseStudentUploadFile(file: File): Promise<StudentUploadData[]>
     
     reader.readAsArrayBuffer(file)
   })
+}
+
+// Helper function to filter out exact duplicate student entries
+export function filterExactDuplicateStudents(students: StudentUploadData[]): StudentUploadData[] {
+  const seen = new Set<string>()
+  const uniqueStudents: StudentUploadData[] = []
+  let duplicateCount = 0
+  
+  students.forEach((student, index) => {
+    const key = `${student.chestNo.trim().toUpperCase()}_${student.studentName.trim().toLowerCase()}_${student.sectionCode.trim().toUpperCase()}_${student.programName.trim().toLowerCase()}`
+    
+    if (!seen.has(key)) {
+      seen.add(key)
+      uniqueStudents.push(student)
+    } else {
+      duplicateCount++
+      console.log(`Skipping exact duplicate at row ${index + 1}: ${student.chestNo} - ${student.studentName} - ${student.sectionCode} - ${student.programName}`)
+    }
+  })
+  
+  if (duplicateCount > 0) {
+    console.log(`Filtered out ${duplicateCount} exact duplicate entries. Processing ${uniqueStudents.length} unique entries.`)
+  }
+  
+  return uniqueStudents
 }
 
 // Validate student data
@@ -708,8 +740,6 @@ export function validateStudentData(
     return { isValid: false, errors }
   }
 
-  const seenChestNos = new Map<string, number>()
-  
   students.forEach((student, index) => {
     // Validate chest number
     if (!student.chestNo.trim()) {
@@ -736,17 +766,8 @@ export function validateStudentData(
       }
     }
     
-    // Check for duplicate chest numbers within the file
-    if (student.chestNo.trim()) {
-      const key = student.chestNo.trim().toUpperCase()
-      const previousRow = seenChestNos.get(key)
-      
-      if (previousRow !== undefined) {
-        errors.push(`Row ${index + 1}: Duplicate chest number "${student.chestNo}" (first seen in row ${previousRow + 1})`)
-      } else {
-        seenChestNos.set(key, index)
-      }
-    }
+    // Note: Exact duplicates are already filtered out during parsing
+    // No need to validate for duplicates here since they're handled at the parsing stage
   })
 
   return {
@@ -1354,8 +1375,7 @@ export function parseProgramPrizeAssignmentExcelFile(file: File): Promise<Progra
 export function validateProgramPrizeAssignmentData(
   assignments: ProgramPrizeAssignmentUploadData[],
   availablePrograms: Array<{ name: string; section_id: string; id: string }>,
-  availableSections: Array<{ code: string; name: string; id: string }>,
-  availablePrizeCategories: Array<{ code: string; name: string }>
+  availableSections: Array<{ code: string; name: string; id: string }>
 ): { isValid: boolean; errors: string[] } {
   const errors: string[] = []
   

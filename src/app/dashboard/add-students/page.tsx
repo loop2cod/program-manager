@@ -144,10 +144,10 @@ export default function AddStudentsPage() {
     }
     
     try {
-      // Check if chest number already exists
-      const exists = await studentsService.checkChestNoExists(chestNo)
+      // Check if this specific student-program combination already exists
+      const exists = await studentsService.checkStudentProgramExists(chestNo, programId)
       if (exists) {
-        toast.error('A student with this chest number already exists')
+        toast.error('This student is already registered for the selected program')
         return
       }
       
@@ -245,11 +245,11 @@ export default function AddStudentsPage() {
             continue
           }
 
-          // Check if chest number already exists
-          const exists = await studentsService.checkChestNoExists(studentData.chestNo)
+          // Check if this specific student-program combination already exists
+          const exists = await studentsService.checkStudentProgramExists(studentData.chestNo, program.id)
           if (exists) {
             failed++
-            errors.push(`Row ${i + 1}: Chest number "${studentData.chestNo}" already exists`)
+            errors.push(`Row ${i + 1}: Student "${studentData.chestNo}" is already registered for program "${studentData.programName}"`)
             continue
           }
 

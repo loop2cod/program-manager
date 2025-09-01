@@ -171,7 +171,7 @@ export default function ProgramAssignmentsPage() {
     
     try {
       const assignments = await parseProgramPrizeAssignmentExcelFile(file)
-      const validation = validateProgramPrizeAssignmentData(assignments, programs, sections, [])
+      const validation = validateProgramPrizeAssignmentData(assignments, programs, sections)
       
       setUploadResult({
         assignments,

@@ -11,8 +11,8 @@ CREATE TABLE IF NOT EXISTS students (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   
-  -- Ensure unique chest number per user
-  UNIQUE(chest_no, user_id)
+  -- Ensure unique chest number per program per user (same student can be in multiple programs)
+  UNIQUE(chest_no, program_id, user_id)
 );
 
 -- Create indexes for better performance
