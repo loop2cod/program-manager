@@ -1026,6 +1026,94 @@ export const programWinnersService = {
   }
 }
 
+// Student Winners Summary interface for All Program Winners view
+export interface StudentWinnersSummary {
+  student_id: string
+  student_name: string
+  student_chest_no: string
+  section_id: string
+  section_name: string
+  section_code: string
+  total_prizes: number
+  programs_won: {
+    program_id: string
+    program_name: string
+    placement: string
+    placement_order: number
+    prize_name?: string
+    prize_category?: string
+    prize_category_name?: string
+    prize_image_url?: string
+    prize_average_value?: number
+    notes?: string
+  }[]
+}
+
+// Get all program winners grouped by student
+export const getAllProgramWinnersByStudent = async (): Promise<StudentWinnersSummary[]> => {
+  try {
+    const { data: winnersData, error } = await supabase
+      .from('program_winners_view')
+      .select('*')
+      .order('student_name', { ascending: true })
+      .order('placement_order', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching student winners:', error)
+      throw new Error(`Failed to fetch student winners: ${error.message}`)
+    }
+
+    const winners = winnersData || []
+    
+    // Group winners by student
+    const studentWinnersMap = new Map<string, StudentWinnersSummary>()
+
+    winners.forEach((winner: ProgramWinnerWithDetails) => {
+      const studentKey = winner.student_id
+
+      if (!studentWinnersMap.has(studentKey)) {
+        studentWinnersMap.set(studentKey, {
+          student_id: winner.student_id,
+          student_name: winner.student_name,
+          student_chest_no: winner.student_chest_no,
+          section_id: winner.program_id, // This will be updated from the first program
+          section_name: winner.section_name,
+          section_code: winner.section_code,
+          total_prizes: 0,
+          programs_won: []
+        })
+      }
+
+      const studentSummary = studentWinnersMap.get(studentKey)!
+      
+      studentSummary.programs_won.push({
+        program_id: winner.program_id,
+        program_name: winner.program_name,
+        placement: winner.placement,
+        placement_order: winner.placement_order,
+        prize_name: winner.prize_name,
+        prize_category: winner.prize_category,
+        prize_category_name: winner.prize_category_name,
+        prize_image_url: winner.prize_image_url,
+        prize_average_value: winner.prize_average_value,
+        notes: winner.notes
+      })
+
+      // Count prizes (only count if there's actually a prize assigned)
+      if (winner.prize_name) {
+        studentSummary.total_prizes++
+      }
+    })
+
+    return Array.from(studentWinnersMap.values()).sort((a, b) => 
+      b.total_prizes - a.total_prizes || a.student_name.localeCompare(b.student_name)
+    )
+  } catch (error) {
+    console.error('Error fetching student winners summary:', error)
+    throw new Error(`Failed to fetch student winners: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
 // Get programs with participant counts
 export const getProgramsWithParticipants = async (): Promise<ProgramWithParticipants[]> => {
   try {

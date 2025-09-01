@@ -361,26 +361,26 @@ export function downloadPrizeTemplate() {
     { 'Instructions': '' },
     { 'Instructions': '1. Fill in the Prize Name (e.g., FIRST PRIZE TROPHY, MEDAL, CERTIFICATE)' },
     { 'Instructions': '2. Add Image URL - web link to the prize image (optional)' },
-    { 'Instructions': '3. Set Category - single letter from A to J (e.g., A, B, C)' },
+    { 'Instructions': '3. Set Category - any text code (e.g., A, TROPHY, MEDAL, CERTIFICATE)' },
     { 'Instructions': '4. Add Average Value - estimated monetary value (optional, numbers only)' },
     { 'Instructions': '5. Add Description - brief description of the prize (optional)' },
     { 'Instructions': '' },
     { 'Instructions': 'Category Guidelines:' },
-    { 'Instructions': 'A = Top tier prizes (1st, 2nd, 3rd place)' },
-    { 'Instructions': 'B = Performance-based prizes (Best performer, Special awards)' },
-    { 'Instructions': 'C = Participation prizes (Certificates, Medals for all)' },
-    { 'Instructions': 'D-J = Custom categories as needed' },
+    { 'Instructions': 'A or TROPHY = Top tier prizes (1st, 2nd, 3rd place)' },
+    { 'Instructions': 'B or MEDAL = Performance-based prizes (Best performer, Special awards)' },
+    { 'Instructions': 'C or CERTIFICATE = Participation prizes (Certificates, Medals for all)' },
+    { 'Instructions': 'Any custom text = Create your own categories as needed' },
     { 'Instructions': '' },
     { 'Instructions': 'Notes:' },
     { 'Instructions': '- Prize names must be unique within each category' },
     { 'Instructions': '- Image URL is optional but recommended for visual prizes' },
-    { 'Instructions': '- Category must be a single letter (A-J)' },
+    { 'Instructions': '- Category can be any text (A, TROPHY, MEDAL, etc.)' },
     { 'Instructions': '- Keep prize names in UPPERCASE for consistency' },
     { 'Instructions': '' },
     { 'Instructions': 'Examples:' },
-    { 'Instructions': 'FIRST PRIZE TROPHY → Category A (Top prize)' },
-    { 'Instructions': 'PARTICIPATION MEDAL → Category C (Everyone gets)' },
-    { 'Instructions': 'BEST PERFORMER → Category B (Special recognition)' }
+    { 'Instructions': 'FIRST PRIZE TROPHY → Category TROPHY (Top prize)' },
+    { 'Instructions': 'PARTICIPATION MEDAL → Category MEDAL (Everyone gets)' },
+    { 'Instructions': 'BEST PERFORMER → Category SPECIAL (Special recognition)' }
   ]
 
   const instructionWs = XLSX.utils.json_to_sheet(instructions)
@@ -456,8 +456,6 @@ export function validatePrizeData(prizes: PrizeUploadData[]): { isValid: boolean
     return { isValid: false, errors }
   }
   
-  const validCategories = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
-  
   // Check for required fields and duplicates
   const seenPrizes = new Map<string, number>()
   
@@ -468,8 +466,6 @@ export function validatePrizeData(prizes: PrizeUploadData[]): { isValid: boolean
     
     if (!prize.category.trim()) {
       errors.push(`Row ${index + 1}: Category is required`)
-    } else if (!validCategories.includes(prize.category.trim().toUpperCase())) {
-      errors.push(`Row ${index + 1}: Category must be a letter from A to J (got "${prize.category}")`)
     }
     
     // Validate Image URL format if provided
@@ -1191,4 +1187,336 @@ export function printPrizeCertificate(prize: StudentPrizeExportData) {
       printWindow.print()
     }, 250)
   }
+}
+
+// Program Prize Assignment Upload/Export interfaces and functions
+export interface ProgramPrizeAssignmentUploadData {
+  programName: string
+  sectionCode: string
+  placement: string
+  prizeCategory: string
+}
+
+export interface ProgramPrizeAssignmentExportData {
+  programName: string
+  sectionName: string
+  sectionCode: string
+  placement: string
+  prizeName: string
+  prizeCategory: string
+  quantity: number
+  notes?: string
+  createdAt: string
+}
+
+// Download program prize assignment template
+export function downloadProgramPrizeAssignmentTemplate() {
+  const sampleData = [
+    {
+      'Program Name': 'BURDA',
+      'Section Code': 'JB',
+      'Placement': '1st',
+      'Prize Category': 'TROPHY'
+    },
+    {
+      'Program Name': 'BURDA',
+      'Section Code': 'JB',
+      'Placement': '2nd',
+      'Prize Category': 'MEDAL'
+    },
+    {
+      'Program Name': 'HAND CRAFT',
+      'Section Code': 'JB',
+      'Placement': '1st',
+      'Prize Category': 'TROPHY'
+    },
+    {
+      'Program Name': 'PAINTING',
+      'Section Code': 'K1G',
+      'Placement': 'Participation',
+      'Prize Category': 'CERTIFICATE'
+    },
+    {
+      'Program Name': 'STORY TELLING',
+      'Section Code': 'SG',
+      'Placement': 'Best Performance',
+      'Prize Category': 'SPECIAL'
+    }
+  ]
+
+  // Create workbook
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.json_to_sheet(sampleData)
+
+  // Set column widths
+  const colWidths = [
+    { wch: 25 }, // Program Name
+    { wch: 15 }, // Section Code
+    { wch: 18 }, // Placement
+    { wch: 15 }  // Prize Category
+  ]
+  ws['!cols'] = colWidths
+
+  // Add worksheet to workbook
+  XLSX.utils.book_append_sheet(wb, ws, 'Prize Assignments')
+
+  // Create instructions sheet
+  const instructions = [
+    { 'Instructions': 'How to use this Program Prize Assignment template:' },
+    { 'Instructions': '' },
+    { 'Instructions': '1. Program Name: Must match existing programs in your system' },
+    { 'Instructions': '2. Section Code: Must match existing sections (e.g., JB, K1G, SG)' },
+    { 'Instructions': '3. Placement: Position/rank (1st, 2nd, 3rd, Participation, Best Performance, etc.)' },
+    { 'Instructions': '4. Prize Category: Any category code (A, TROPHY, MEDAL, etc.) - system will auto-assign prizes' },
+    { 'Instructions': '' },
+    { 'Instructions': 'Standard Placements:' },
+    { 'Instructions': '- 1st, 2nd, 3rd (for ranking positions)' },
+    { 'Instructions': '- Participation (for all participants)' },
+    { 'Instructions': '- Best Performance (for special recognition)' },
+    { 'Instructions': '- Special Award (for unique achievements)' },
+    { 'Instructions': '- You can also use custom placements' },
+    { 'Instructions': '' },
+    { 'Instructions': 'Important Notes:' },
+    { 'Instructions': '- Each program can have only one assignment per placement' },
+    { 'Instructions': '- Programs and sections must exist before importing' },
+    { 'Instructions': '- Prize category can be any text - determines which prizes are available' },
+    { 'Instructions': '- Quantity defaults to 1 for all assignments' },
+    { 'Instructions': '- System will auto-select appropriate prizes from the category' },
+    { 'Instructions': '' },
+    { 'Instructions': 'Examples:' },
+    { 'Instructions': 'BURDA (JB section) → 1st place → Category TROPHY (system picks prize)' },
+    { 'Instructions': 'PAINTING (K1G section) → Participation → Category CERTIFICATE (system picks prize)' }
+  ]
+
+  const instructionWs = XLSX.utils.json_to_sheet(instructions)
+  instructionWs['!cols'] = [{ wch: 70 }]
+  XLSX.utils.book_append_sheet(wb, instructionWs, 'Instructions')
+
+  // Generate buffer and save
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([wbout], { type: 'application/octet-stream' })
+  saveAs(blob, 'program-prize-assignments-template.xlsx')
+}
+
+// Parse program prize assignment Excel file
+export function parseProgramPrizeAssignmentExcelFile(file: File): Promise<ProgramPrizeAssignmentUploadData[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer)
+        const workbook = XLSX.read(data, { type: 'array' })
+        
+        // Get the first worksheet
+        const worksheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[worksheetName]
+        
+        // Convert to JSON
+        const jsonData = XLSX.utils.sheet_to_json(worksheet) as Record<string, unknown>[]
+        
+        // Parse assignments
+        const assignments: ProgramPrizeAssignmentUploadData[] = []
+        
+        jsonData.forEach((row) => {
+          const programName = row['Program Name']?.toString()?.trim()
+          const sectionCode = row['Section Code']?.toString()?.trim()
+          const placement = row['Placement']?.toString()?.trim()
+          const prizeCategory = row['Prize Category']?.toString()?.trim()?.toUpperCase()
+          
+          if (!programName || !sectionCode || !placement || !prizeCategory) {
+            return // Skip invalid rows
+          }
+          
+          assignments.push({
+            programName,
+            sectionCode,
+            placement,
+            prizeCategory
+          })
+        })
+        
+        resolve(assignments)
+      } catch (error) {
+        reject(new Error('Failed to parse Excel file: ' + (error as Error).message))
+      }
+    }
+    
+    reader.onerror = () => {
+      reject(new Error('Failed to read file'))
+    }
+    
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+// Validate program prize assignment data
+export function validateProgramPrizeAssignmentData(
+  assignments: ProgramPrizeAssignmentUploadData[],
+  availablePrograms: Array<{ name: string; section_id: string; id: string }>,
+  availableSections: Array<{ code: string; name: string; id: string }>,
+  availablePrizeCategories: Array<{ code: string; name: string }>
+): { isValid: boolean; errors: string[] } {
+  const errors: string[] = []
+  
+  if (assignments.length === 0) {
+    errors.push('No valid assignments found in the file')
+    return { isValid: false, errors }
+  }
+
+  const seenAssignments = new Map<string, number>()
+  
+  assignments.forEach((assignment, index) => {
+    // Validate required fields
+    if (!assignment.programName.trim()) {
+      errors.push(`Row ${index + 1}: Program name is required`)
+    }
+    
+    if (!assignment.sectionCode.trim()) {
+      errors.push(`Row ${index + 1}: Section code is required`)
+    }
+    
+    if (!assignment.placement.trim()) {
+      errors.push(`Row ${index + 1}: Placement is required`)
+    }
+    
+    if (!assignment.prizeCategory.trim()) {
+      errors.push(`Row ${index + 1}: Prize category is required`)
+    }
+    
+    // Validate section exists
+    const section = availableSections.find(s => s.code.toUpperCase() === assignment.sectionCode.toUpperCase())
+    if (!section && assignment.sectionCode.trim()) {
+      errors.push(`Row ${index + 1}: Section code "${assignment.sectionCode}" does not exist`)
+    }
+    
+    // Validate program exists in the section
+    if (section && assignment.programName.trim()) {
+      const program = availablePrograms.find(p => 
+        p.name.toLowerCase() === assignment.programName.toLowerCase() && 
+        p.section_id === section.id
+      )
+      if (!program) {
+        errors.push(`Row ${index + 1}: Program "${assignment.programName}" does not exist in section "${assignment.sectionCode}"`)
+      }
+    }
+    
+    // Check for duplicate assignments (same program + placement)
+    if (assignment.programName.trim() && assignment.placement.trim() && section) {
+      const key = `${assignment.programName.trim().toLowerCase()}_${section.id}_${assignment.placement.trim().toLowerCase()}`
+      const previousRow = seenAssignments.get(key)
+      
+      if (previousRow !== undefined) {
+        errors.push(`Row ${index + 1}: Duplicate assignment for program "${assignment.programName}" placement "${assignment.placement}" (first seen in row ${previousRow + 1})`)
+      } else {
+        seenAssignments.set(key, index)
+      }
+    }
+  })
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  }
+}
+
+// Export program prize assignments to Excel
+export function exportProgramPrizeAssignmentsToExcel(
+  assignments: ProgramPrizeAssignmentExportData[], 
+  filename?: string
+) {
+  if (assignments.length === 0) {
+    throw new Error('No assignments to export')
+  }
+
+  // Prepare data for export
+  const exportData = assignments.map(assignment => ({
+    'Program Name': assignment.programName,
+    'Section Code': assignment.sectionCode,
+    'Section Name': assignment.sectionName,
+    'Placement': assignment.placement,
+    'Prize Name': assignment.prizeName,
+    'Prize Category': assignment.prizeCategory,
+    'Quantity': assignment.quantity,
+    'Notes': assignment.notes || '',
+    'Created Date': assignment.createdAt ? new Date(assignment.createdAt).toLocaleDateString() : ''
+  }))
+
+  // Create workbook
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.json_to_sheet(exportData)
+
+  // Set column widths
+  const colWidths = [
+    { wch: 25 }, // Program Name
+    { wch: 15 }, // Section Code
+    { wch: 25 }, // Section Name
+    { wch: 18 }, // Placement
+    { wch: 30 }, // Prize Name
+    { wch: 15 }, // Prize Category
+    { wch: 10 }, // Quantity
+    { wch: 30 }, // Notes
+    { wch: 15 }  // Created Date
+  ]
+  ws['!cols'] = colWidths
+
+  // Add worksheet to workbook
+  XLSX.utils.book_append_sheet(wb, ws, 'Prize Assignments')
+
+  // Create summary by section
+  const sections = [...new Set(assignments.map(a => a.sectionCode))]
+  const sectionSummary = sections.map(sectionCode => {
+    const sectionAssignments = assignments.filter(a => a.sectionCode === sectionCode)
+    const uniquePrograms = [...new Set(sectionAssignments.map(a => a.programName))]
+    const totalPrizes = sectionAssignments.reduce((sum, a) => sum + a.quantity, 0)
+    
+    return {
+      'Section Code': sectionCode,
+      'Section Name': sectionAssignments[0]?.sectionName || 'Unknown',
+      'Programs': uniquePrograms.length,
+      'Assignments': sectionAssignments.length,
+      'Total Prizes': totalPrizes,
+      'Program Names': uniquePrograms.join(', ')
+    }
+  })
+
+  const summaryWs = XLSX.utils.json_to_sheet(sectionSummary)
+  summaryWs['!cols'] = [
+    { wch: 15 }, // Section Code
+    { wch: 25 }, // Section Name
+    { wch: 12 }, // Programs
+    { wch: 15 }, // Assignments
+    { wch: 15 }, // Total Prizes
+    { wch: 50 }  // Program Names
+  ]
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'Section Summary')
+
+  // Create summary by placement
+  const placements = [...new Set(assignments.map(a => a.placement))]
+  const placementSummary = placements.map(placement => {
+    const placementAssignments = assignments.filter(a => a.placement === placement)
+    const totalQuantity = placementAssignments.reduce((sum, a) => sum + a.quantity, 0)
+    
+    return {
+      'Placement': placement,
+      'Programs': placementAssignments.length,
+      'Total Quantity': totalQuantity,
+      'Prize Categories': [...new Set(placementAssignments.map(a => a.prizeCategory))].join(', ')
+    }
+  })
+
+  const placementWs = XLSX.utils.json_to_sheet(placementSummary)
+  placementWs['!cols'] = [
+    { wch: 20 }, // Placement
+    { wch: 15 }, // Programs
+    { wch: 15 }, // Total Quantity
+    { wch: 30 }  // Prize Categories
+  ]
+  XLSX.utils.book_append_sheet(wb, placementWs, 'Placement Summary')
+
+  // Generate and download file
+  const exportFilename = filename || `program-prize-assignments-export-${new Date().toISOString().split('T')[0]}.xlsx`
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([wbout], { type: 'application/octet-stream' })
+  saveAs(blob, exportFilename)
 }
