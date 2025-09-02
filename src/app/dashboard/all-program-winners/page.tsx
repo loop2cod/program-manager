@@ -231,11 +231,13 @@ export default function AllProgramWinnersPage() {
         'Chest No': record.student_chest_no,
         'Total Programs': record.total_programs,
         'Total Prizes': record.total_prizes,
-        'Total Prize Value': record.total_value > 0 ? `₹${record.total_value}` : '₹0',
         'Sections': record.sections.join(', '),
         'Programs Won': record.programs.map(p => p.program_name).join(', '),
         'Placements': record.programs.map(p => p.placement).join(', '),
-        'Prizes Won': record.programs.filter(p => p.prize_name).map(p => p.prize_name).join(', ') || 'No prizes',
+        'Prizes Won': record.programs
+          .filter(p => p.prize_name && p.prize_name.trim() !== '')
+          .map(p => p.prize_name!)
+          .join(', ') || 'No prizes',
         'Prize Categories': [...new Set(record.programs.filter(p => p.prize_category_name).map(p => p.prize_category_name))].join(', ') || '-',
         'Best Placement': record.programs.reduce((best, current) => 
           current.placement_order < best.placement_order ? current : best
@@ -254,7 +256,6 @@ export default function AllProgramWinnersPage() {
         { wch: 12 }, // Chest No
         { wch: 12 }, // Total Programs
         { wch: 12 }, // Total Prizes
-        { wch: 15 }, // Total Prize Value
         { wch: 15 }, // Sections
         { wch: 40 }, // Programs Won
         { wch: 25 }, // Placements
