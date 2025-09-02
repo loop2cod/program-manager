@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Plus, Loader2, Filter, X, Trophy, Edit, Trash2, Award, Gift } from 'lucide-react'
+import { Plus, Loader2, Filter, X, Trophy, Edit, Trash2, Award, Gift, Upload, Download } from 'lucide-react'
 import { 
   programWinnersService,
   programsService,
@@ -22,6 +22,13 @@ import {
   type StudentWithDetails
 } from '@/lib/database'
 import { toast } from 'sonner'
+import { FileUpload } from '@/components/ui/file-upload'
+import { 
+  downloadProgramWinnerTemplate, 
+  parseProgramWinnerExcelFile, 
+  validateProgramWinnerData,
+  type ProgramWinnerUploadData 
+} from '@/lib/excel-utils'
 
 export default function ProgramWinnersPage() {
   const [winners, setWinners] = useState<ProgramWinnerWithDetails[]>([])
@@ -40,6 +47,18 @@ export default function ProgramWinnersPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingWinner, setEditingWinner] = useState<ProgramWinnerWithDetails | null>(null)
+  
+  // Bulk upload states
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{
+    total: number
+    processed: number
+    success: number
+    failed: number
+    errors: string[]
+  } | null>(null)
 
   // Form states
   const [formData, setFormData] = useState({
@@ -192,6 +211,125 @@ export default function ProgramWinnersPage() {
     setSearchQuery('')
   }
 
+  const handleBulkUpload = async () => {
+    if (!uploadFile) {
+      toast.error('Please select a file to upload')
+      return
+    }
+
+    try {
+      setIsUploading(true)
+      setUploadProgress({
+        total: 0,
+        processed: 0,
+        success: 0,
+        failed: 0,
+        errors: []
+      })
+
+      // Parse Excel file
+      const parsedWinners = await parseProgramWinnerExcelFile(uploadFile)
+      
+      setUploadProgress(prev => prev ? { ...prev, total: parsedWinners.length } : null)
+
+      // Validate data
+      const validation = validateProgramWinnerData(
+        parsedWinners,
+        students,
+        programs,
+        sections
+      )
+
+      if (!validation.isValid) {
+        setUploadProgress(prev => prev ? {
+          ...prev,
+          failed: parsedWinners.length,
+          errors: validation.errors
+        } : null)
+        toast.error(`Validation failed with ${validation.errors.length} errors. Please check the file and try again.`)
+        return
+      }
+
+      // Upload winners in batches
+      const batchSize = 10
+      let successCount = 0
+      let failCount = 0
+      const allErrors: string[] = []
+
+      for (let i = 0; i < validation.validWinners.length; i += batchSize) {
+        const batch = validation.validWinners.slice(i, i + batchSize)
+        
+        await Promise.allSettled(
+          batch.map(async (winner, batchIndex) => {
+            const globalIndex = i + batchIndex
+            try {
+              await programWinnersService.create({
+                program_id: winner.program_id,
+                student_id: winner.student_id,
+                placement: winner.placement,
+                notes: winner.notes || undefined
+              })
+              successCount++
+            } catch (error) {
+              failCount++
+              const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+              allErrors.push(`Row ${globalIndex + 1}: ${errorMsg}`)
+            }
+            
+            setUploadProgress(prev => prev ? {
+              ...prev,
+              processed: globalIndex + 1,
+              success: successCount,
+              failed: failCount,
+              errors: [...allErrors]
+            } : null)
+          })
+        )
+        
+        // Small delay between batches to avoid overwhelming the system
+        if (i + batchSize < validation.validWinners.length) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+      }
+
+      if (successCount > 0) {
+        toast.success(`Successfully uploaded ${successCount} winners${failCount > 0 ? ` (${failCount} failed)` : ''}`)
+        await loadData()
+      }
+
+      if (failCount > 0) {
+        toast.error(`${failCount} winners failed to upload. Check the error details.`)
+      }
+
+    } catch (error) {
+      console.error('Error during bulk upload:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to upload winners')
+      setUploadProgress(prev => prev ? {
+        ...prev,
+        failed: prev.total,
+        errors: [error instanceof Error ? error.message : 'Upload failed']
+      } : null)
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const resetBulkUpload = () => {
+    setUploadFile(null)
+    setUploadProgress(null)
+    setIsBulkUploadOpen(false)
+  }
+
+  const handleDownloadTemplate = () => {
+    try {
+      downloadProgramWinnerTemplate()
+      toast.success('Template downloaded successfully')
+    } catch (error) {
+      console.error('Error downloading template:', error)
+      toast.error('Failed to download template')
+    }
+  }
+
   const hasActiveFilters = selectedSection !== 'all' || selectedProgram !== 'all' || searchQuery.trim() !== ''
 
   const availablePrograms = selectedSection === 'all' 
@@ -235,14 +373,158 @@ export default function ProgramWinnersPage() {
             Assign students to program placements and track winners
           </p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="h-9" onClick={resetForm}>
-              <Plus className="mr-1.5 h-3 w-3" />
-              Add Winner
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+        <div className="flex gap-2">
+          <Button
+            onClick={handleDownloadTemplate}
+            variant="outline"
+            size="sm"
+            className="h-9"
+          >
+            <Download className="mr-1.5 h-3 w-3" />
+            Template
+          </Button>
+          
+          <Dialog open={isBulkUploadOpen} onOpenChange={setIsBulkUploadOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9" onClick={() => setUploadFile(null)}>
+                <Upload className="mr-1.5 h-3 w-3" />
+                Bulk Upload
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Bulk Upload Winners</DialogTitle>
+                <DialogDescription>
+                  Upload multiple program winners from an Excel file
+                </DialogDescription>
+              </DialogHeader>
+              
+              {!uploadProgress ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Upload Excel File</label>
+                    <FileUpload
+                      onFileSelect={setUploadFile}
+                      maxFileSize={10 * 1024 * 1024} // 10MB
+                    />
+                    {uploadFile && (
+                      <p className="text-sm text-green-600">
+                        Ready to upload: {uploadFile.name}
+                      </p>
+                    )}
+                  </div>
+                  
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 className="font-medium text-blue-900 mb-2">Template Instructions</h4>
+                    <ul className="text-sm text-blue-800 space-y-1">
+                      <li>• Download the template using the &quot;Template&quot; button</li>
+                      <li>• Students must already be registered in the programs</li>
+                      <li>• Each student can only win one placement per program</li>
+                      <li>• All data must match existing records exactly</li>
+                    </ul>
+                  </div>
+                  
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      onClick={handleBulkUpload}
+                      disabled={!uploadFile || isUploading}
+                      className="flex-1"
+                    >
+                      {isUploading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="mr-2 h-4 w-4" />
+                          Upload Winners
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={resetBulkUpload}
+                      disabled={isUploading}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <span>Progress</span>
+                      <span>{uploadProgress.processed}/{uploadProgress.total}</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{
+                          width: `${uploadProgress.total > 0 ? (uploadProgress.processed / uploadProgress.total) * 100 : 0}%`
+                        }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <div className="text-lg font-semibold text-green-600">
+                        {uploadProgress.success}
+                      </div>
+                      <div className="text-xs text-green-600">Success</div>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <div className="text-lg font-semibold text-red-600">
+                        {uploadProgress.failed}
+                      </div>
+                      <div className="text-xs text-red-600">Failed</div>
+                    </div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                      <div className="text-lg font-semibold text-gray-600">
+                        {uploadProgress.total - uploadProgress.processed}
+                      </div>
+                      <div className="text-xs text-gray-600">Remaining</div>
+                    </div>
+                  </div>
+                  
+                  {uploadProgress.errors.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-red-900">Errors ({uploadProgress.errors.length})</h4>
+                      <div className="max-h-40 overflow-y-auto bg-red-50 border border-red-200 rounded p-3">
+                        {uploadProgress.errors.map((error, index) => (
+                          <div key={index} className="text-sm text-red-700">
+                            {error}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      onClick={resetBulkUpload}
+                      disabled={isUploading}
+                      className="flex-1"
+                    >
+                      {isUploading ? 'Processing...' : 'Done'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+          
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="h-9" onClick={resetForm}>
+                <Plus className="mr-1.5 h-3 w-3" />
+                Add Winner
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Add Program Winner</DialogTitle>
               <DialogDescription>
@@ -346,8 +628,9 @@ export default function ProgramWinnersPage() {
                 </Button>
               </div>
             </form>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Filters */}

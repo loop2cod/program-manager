@@ -1540,3 +1540,406 @@ export function exportProgramPrizeAssignmentsToExcel(
   const blob = new Blob([wbout], { type: 'application/octet-stream' })
   saveAs(blob, exportFilename)
 }
+
+// Program Winners Bulk Upload interfaces and functions
+export interface ProgramWinnerUploadData {
+  chestNo: string
+  studentName: string
+  sectionCode: string
+  programName: string
+  placement: string
+  notes?: string
+}
+
+export interface ProgramWinnerExportData {
+  chestNo: string
+  studentName: string
+  sectionCode: string
+  sectionName: string
+  programName: string
+  placement: string
+  prizeName?: string
+  prizeCategory?: string
+  notes?: string
+  createdAt: string
+}
+
+// Download program winner bulk upload template
+export function downloadProgramWinnerTemplate() {
+  const sampleData = [
+    {
+      'Chest No': '413',
+      'Student Name': 'Ahmed Ali',
+      'Section Code': 'JB',
+      'Program Name': 'BURDA',
+      'Placement': '1st',
+      'Notes': 'Excellent performance'
+    },
+    {
+      'Chest No': '414',
+      'Student Name': 'Fatima Hassan',
+      'Section Code': 'K1B',
+      'Program Name': 'HAND WRITING ARABIMALAYALAM',
+      'Placement': '2nd',
+      'Notes': ''
+    },
+    {
+      'Chest No': '415',
+      'Student Name': 'Mohammed Yusuf',
+      'Section Code': 'K1G',
+      'Program Name': 'PAINTING',
+      'Placement': 'Participation',
+      'Notes': 'Great effort'
+    },
+    {
+      'Chest No': '416',
+      'Student Name': 'Aisha Rahman',
+      'Section Code': 'SG',
+      'Program Name': 'STORY TELLING',
+      'Placement': '1st',
+      'Notes': ''
+    },
+    {
+      'Chest No': '417',
+      'Student Name': 'Omar Khan',
+      'Section Code': 'SB',
+      'Program Name': 'QURAN RECITATION',
+      'Placement': '3rd',
+      'Notes': 'Very good recitation'
+    }
+  ]
+
+  // Create workbook
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.json_to_sheet(sampleData)
+
+  // Set column widths
+  const colWidths = [
+    { wch: 12 }, // Chest No
+    { wch: 20 }, // Student Name
+    { wch: 15 }, // Section Code
+    { wch: 30 }, // Program Name
+    { wch: 15 }, // Placement
+    { wch: 25 }  // Notes
+  ]
+  ws['!cols'] = colWidths
+
+  // Add worksheet to workbook
+  XLSX.utils.book_append_sheet(wb, ws, 'Program Winners')
+
+  // Create instructions sheet
+  const instructions = [
+    { 'Instructions': 'How to use this Program Winners bulk upload template:' },
+    { 'Instructions': '' },
+    { 'Instructions': '1. Chest No: Student chest number (must exist in system)' },
+    { 'Instructions': '2. Student Name: Full name of the student (must match existing student)' },
+    { 'Instructions': '3. Section Code: Section code (JB, K1B, K1G, SG, SB, etc.)' },
+    { 'Instructions': '4. Program Name: Exact program name (must exist in the specified section)' },
+    { 'Instructions': '5. Placement: Position achieved (1st, 2nd, 3rd, Participation, etc.)' },
+    { 'Instructions': '6. Notes: Optional notes about the winner (leave blank if none)' },
+    { 'Instructions': '' },
+    { 'Instructions': 'Standard Placements:' },
+    { 'Instructions': '- 1st, 2nd, 3rd (for ranking positions)' },
+    { 'Instructions': '- Participation (for all participants)' },
+    { 'Instructions': '- Best Performance (for special recognition)' },
+    { 'Instructions': '- Special Award (for unique achievements)' },
+    { 'Instructions': '- You can also use custom placements' },
+    { 'Instructions': '' },
+    { 'Instructions': 'Important Rules:' },
+    { 'Instructions': '- Students must already be registered in the program to be added as winners' },
+    { 'Instructions': '- Each student can only win one placement per program' },
+    { 'Instructions': '- Student name and chest number must match exactly' },
+    { 'Instructions': '- Program must exist in the specified section' },
+    { 'Instructions': '- Duplicate entries (same student + program) will be skipped' },
+    { 'Instructions': '' },
+    { 'Instructions': 'Validation Notes:' },
+    { 'Instructions': '- System will check if student is registered for the program' },
+    { 'Instructions': '- Section code must exist in your system' },
+    { 'Instructions': '- Program name must exist in the specified section' },
+    { 'Instructions': '- Student chest number and name must match existing records' },
+    { 'Instructions': '' },
+    { 'Instructions': 'Examples:' },
+    { 'Instructions': 'Ahmed Ali (413) → JB section → BURDA program → 1st place' },
+    { 'Instructions': 'Fatima Hassan (414) → K1B section → HAND WRITING → 2nd place' },
+    { 'Instructions': 'Mohammed Yusuf (415) → K1G section → PAINTING → Participation' }
+  ]
+
+  const instructionWs = XLSX.utils.json_to_sheet(instructions)
+  instructionWs['!cols'] = [{ wch: 70 }]
+  XLSX.utils.book_append_sheet(wb, instructionWs, 'Instructions')
+
+  // Generate buffer and save
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([wbout], { type: 'application/octet-stream' })
+  saveAs(blob, 'program-winners-template.xlsx')
+}
+
+// Parse program winner Excel file
+export function parseProgramWinnerExcelFile(file: File): Promise<ProgramWinnerUploadData[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer)
+        const workbook = XLSX.read(data, { type: 'array' })
+        
+        // Get the first worksheet
+        const worksheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[worksheetName]
+        
+        // Convert to JSON
+        const jsonData = XLSX.utils.sheet_to_json(worksheet) as Record<string, unknown>[]
+        
+        // Parse program winners
+        const winners: ProgramWinnerUploadData[] = []
+        
+        jsonData.forEach((row) => {
+          const chestNo = row['Chest No']?.toString()?.trim()
+          const studentName = row['Student Name']?.toString()?.trim()
+          const sectionCode = row['Section Code']?.toString()?.trim()
+          const programName = row['Program Name']?.toString()?.trim()
+          const placement = row['Placement']?.toString()?.trim()
+          const notes = row['Notes']?.toString()?.trim()
+          
+          if (!chestNo || !studentName || !sectionCode || !programName || !placement) {
+            return // Skip invalid rows
+          }
+          
+          winners.push({
+            chestNo,
+            studentName,
+            sectionCode,
+            programName,
+            placement,
+            notes: notes || undefined
+          })
+        })
+        
+        resolve(winners)
+      } catch (error) {
+        reject(new Error('Failed to parse Excel file: ' + (error as Error).message))
+      }
+    }
+    
+    reader.onerror = () => {
+      reject(new Error('Failed to read file'))
+    }
+    
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+// Validate program winner data
+export function validateProgramWinnerData(
+  winners: ProgramWinnerUploadData[],
+  availableStudents: Array<{ id: string; chest_no: string; name: string; program_id: string }>,
+  availablePrograms: Array<{ id: string; name: string; section_id: string }>,
+  availableSections: Array<{ id: string; code: string; name: string }>
+): { isValid: boolean; errors: string[]; validWinners: Array<ProgramWinnerUploadData & { program_id: string; student_id: string }> } {
+  const errors: string[] = []
+  const validWinners: Array<ProgramWinnerUploadData & { program_id: string; student_id: string }> = []
+  
+  if (winners.length === 0) {
+    errors.push('No valid winners found in the file')
+    return { isValid: false, errors, validWinners: [] }
+  }
+
+  const seenWinners = new Map<string, number>()
+  
+  winners.forEach((winner, index) => {
+    let hasError = false
+    
+    // Validate required fields
+    if (!winner.chestNo.trim()) {
+      errors.push(`Row ${index + 1}: Chest number is required`)
+      hasError = true
+    }
+    
+    if (!winner.studentName.trim()) {
+      errors.push(`Row ${index + 1}: Student name is required`)
+      hasError = true
+    }
+    
+    if (!winner.sectionCode.trim()) {
+      errors.push(`Row ${index + 1}: Section code is required`)
+      hasError = true
+    }
+    
+    if (!winner.programName.trim()) {
+      errors.push(`Row ${index + 1}: Program name is required`)
+      hasError = true
+    }
+    
+    if (!winner.placement.trim()) {
+      errors.push(`Row ${index + 1}: Placement is required`)
+      hasError = true
+    }
+    
+    if (hasError) return
+    
+    // Validate section exists
+    const section = availableSections.find(s => s.code.toUpperCase() === winner.sectionCode.toUpperCase())
+    if (!section) {
+      errors.push(`Row ${index + 1}: Section code "${winner.sectionCode}" does not exist`)
+      return
+    }
+    
+    // Validate program exists in the section
+    const program = availablePrograms.find(p => 
+      p.name.toLowerCase() === winner.programName.toLowerCase() && 
+      p.section_id === section.id
+    )
+    if (!program) {
+      errors.push(`Row ${index + 1}: Program "${winner.programName}" does not exist in section "${winner.sectionCode}"`)
+      return
+    }
+    
+    // Validate student exists and is registered for the program
+    const student = availableStudents.find(s => 
+      s.chest_no.toUpperCase() === winner.chestNo.toUpperCase() &&
+      s.name.toLowerCase() === winner.studentName.toLowerCase() &&
+      s.program_id === program.id
+    )
+    if (!student) {
+      // Try to find the student by chest number to give more specific error
+      const studentByChest = availableStudents.find(s => s.chest_no.toUpperCase() === winner.chestNo.toUpperCase())
+      if (!studentByChest) {
+        errors.push(`Row ${index + 1}: Student with chest number "${winner.chestNo}" does not exist`)
+      } else if (studentByChest.name.toLowerCase() !== winner.studentName.toLowerCase()) {
+        errors.push(`Row ${index + 1}: Student name "${winner.studentName}" does not match chest number "${winner.chestNo}" (expected "${studentByChest.name}")`)
+      } else {
+        errors.push(`Row ${index + 1}: Student "${winner.studentName}" (${winner.chestNo}) is not registered for program "${winner.programName}" in section "${winner.sectionCode}"`)
+      }
+      return
+    }
+    
+    // Check for duplicate winners (same student + program)
+    const key = `${student.id}_${program.id}`
+    const previousRow = seenWinners.get(key)
+    
+    if (previousRow !== undefined) {
+      errors.push(`Row ${index + 1}: Duplicate winner for student "${winner.studentName}" in program "${winner.programName}" (first seen in row ${previousRow + 1})`)
+      return
+    } else {
+      seenWinners.set(key, index)
+    }
+    
+    // If all validations pass, add to valid winners
+    validWinners.push({
+      ...winner,
+      program_id: program.id,
+      student_id: student.id
+    })
+  })
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    validWinners
+  }
+}
+
+// Export program winners to Excel
+export function exportProgramWinnersToExcel(winners: ProgramWinnerExportData[], filename?: string) {
+  if (winners.length === 0) {
+    throw new Error('No winners to export')
+  }
+
+  // Prepare data for export
+  const exportData = winners.map(winner => ({
+    'Chest No': winner.chestNo,
+    'Student Name': winner.studentName,
+    'Section Code': winner.sectionCode,
+    'Section Name': winner.sectionName,
+    'Program Name': winner.programName,
+    'Placement': winner.placement,
+    'Prize Name': winner.prizeName || 'No prize assigned',
+    'Prize Category': winner.prizeCategory || 'N/A',
+    'Notes': winner.notes || '',
+    'Date Added': winner.createdAt ? new Date(winner.createdAt).toLocaleDateString() : ''
+  }))
+
+  // Create workbook
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.json_to_sheet(exportData)
+
+  // Set column widths
+  const colWidths = [
+    { wch: 12 }, // Chest No
+    { wch: 20 }, // Student Name
+    { wch: 15 }, // Section Code
+    { wch: 25 }, // Section Name
+    { wch: 30 }, // Program Name
+    { wch: 15 }, // Placement
+    { wch: 25 }, // Prize Name
+    { wch: 15 }, // Prize Category
+    { wch: 30 }, // Notes
+    { wch: 15 }  // Date Added
+  ]
+  ws['!cols'] = colWidths
+
+  // Add worksheet to workbook
+  XLSX.utils.book_append_sheet(wb, ws, 'Program Winners')
+
+  // Create summary by section
+  const sections = [...new Set(winners.map(w => w.sectionCode))]
+  const sectionSummary = sections.map(sectionCode => {
+    const sectionWinners = winners.filter(w => w.sectionCode === sectionCode)
+    const uniquePrograms = [...new Set(sectionWinners.map(w => w.programName))]
+    const winnersWithPrizes = sectionWinners.filter(w => w.prizeName && w.prizeName !== 'No prize assigned').length
+    
+    return {
+      'Section Code': sectionCode,
+      'Section Name': sectionWinners[0]?.sectionName || 'Unknown',
+      'Total Winners': sectionWinners.length,
+      'Programs': uniquePrograms.length,
+      'Winners with Prizes': winnersWithPrizes,
+      'Winners without Prizes': sectionWinners.length - winnersWithPrizes,
+      'Program Names': uniquePrograms.join(', ')
+    }
+  })
+
+  const summaryWs = XLSX.utils.json_to_sheet(sectionSummary)
+  summaryWs['!cols'] = [
+    { wch: 15 }, // Section Code
+    { wch: 25 }, // Section Name
+    { wch: 15 }, // Total Winners
+    { wch: 15 }, // Programs
+    { wch: 18 }, // Winners with Prizes
+    { wch: 20 }, // Winners without Prizes
+    { wch: 50 }  // Program Names
+  ]
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'Section Summary')
+
+  // Create summary by placement
+  const placements = [...new Set(winners.map(w => w.placement))]
+  const placementSummary = placements.map(placement => {
+    const placementWinners = winners.filter(w => w.placement === placement)
+    const winnersWithPrizes = placementWinners.filter(w => w.prizeName && w.prizeName !== 'No prize assigned').length
+    
+    return {
+      'Placement': placement,
+      'Total Winners': placementWinners.length,
+      'Winners with Prizes': winnersWithPrizes,
+      'Winners without Prizes': placementWinners.length - winnersWithPrizes,
+      'Sections': [...new Set(placementWinners.map(w => w.sectionCode))].join(', ')
+    }
+  })
+
+  const placementWs = XLSX.utils.json_to_sheet(placementSummary)
+  placementWs['!cols'] = [
+    { wch: 20 }, // Placement
+    { wch: 15 }, // Total Winners
+    { wch: 18 }, // Winners with Prizes
+    { wch: 20 }, // Winners without Prizes
+    { wch: 30 }  // Sections
+  ]
+  XLSX.utils.book_append_sheet(wb, placementWs, 'Placement Summary')
+
+  // Generate and download file
+  const exportFilename = filename || `program-winners-export-${new Date().toISOString().split('T')[0]}.xlsx`
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([wbout], { type: 'application/octet-stream' })
+  saveAs(blob, exportFilename)
+}

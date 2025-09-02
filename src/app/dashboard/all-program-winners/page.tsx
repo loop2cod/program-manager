@@ -234,11 +234,8 @@ export default function AllProgramWinnersPage() {
         'Sections': record.sections.join(', '),
         'Programs Won': record.programs.map(p => p.program_name).join(', '),
         'Placements': record.programs.map(p => p.placement).join(', '),
-        'Prizes Won': record.programs
-          .filter(p => p.prize_name && p.prize_name.trim() !== '')
-          .map(p => p.prize_name!)
-          .join(', ') || 'No prizes',
-        'Prize Categories': [...new Set(record.programs.filter(p => p.prize_category_name).map(p => p.prize_category_name))].join(', ') || '-',
+        'Prizes Won': record.programs.filter(p => p.prize_name).map(p => p.prize_name).join(', ') || 'No prizes',
+        'Prize Categories': record.programs.filter(p => p.prize_category).map(p => p.prize_category).join(', ') || '-',
         'Best Placement': record.programs.reduce((best, current) => 
           current.placement_order < best.placement_order ? current : best
         ).placement,
@@ -596,7 +593,7 @@ export default function AllProgramWinnersPage() {
                                 <div className="text-xs text-muted-foreground space-y-1">
                                   <div>
                                     Category: <span className="font-medium">
-                                      {program.prize_category_name || program.prize_category}
+                                      {program.prize_category}
                                     </span>
                                   </div>
                                   {program.prize_average_value && (
