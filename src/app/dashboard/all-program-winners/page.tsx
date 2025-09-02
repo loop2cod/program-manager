@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
@@ -44,7 +43,6 @@ interface GroupedWinnerRecord {
 }
 
 export default function AllProgramWinnersPage() {
-  const [studentWinners, setStudentWinners] = useState<StudentWinnersSummary[]>([])
   const [sections, setSections] = useState<Section[]>([])
   const [prizeCategories, setPrizeCategories] = useState<PrizeCategory[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -181,7 +179,6 @@ export default function AllProgramWinnersPage() {
         sectionsService.getAll(),
         prizeCategoriesService.getAll()
       ])
-      setStudentWinners(studentsData)
       setSections(sectionsData)
       setPrizeCategories(prizeCategoriesData)
       
@@ -224,26 +221,27 @@ export default function AllProgramWinnersPage() {
     return "secondary"
   }
 
-  // Excel download function
+  // Excel download function - maintain grouping
   const downloadExcel = () => {
     try {
-      // Flatten grouped data for Excel export
-      const excelData = filteredRecords.flatMap(record =>
-        record.programs.map(program => ({
-          'Student Name': record.student_name,
-          'Chest No': record.student_chest_no,
-          'Total Prizes': record.total_prizes,
-          'Total Value': record.total_value > 0 ? `₹${record.total_value}` : '-',
-          'Section': program.section_name,
-          'Section Code': program.section_code,
-          'Program': program.program_name,
-          'Placement': program.placement,
-          'Prize Name': program.prize_name || 'No Prize',
-          'Prize Category': program.prize_category_name || program.prize_category || '-',
-          'Prize Value': program.prize_average_value ? `₹${program.prize_average_value}` : '-',
-          'Notes': program.notes || '-'
-        }))
-      )
+      // Create grouped summary data for Excel export
+      const excelData = filteredRecords.map((record, index) => ({
+        'Rank': index + 1,
+        'Student Name': record.student_name,
+        'Chest No': record.student_chest_no,
+        'Total Programs': record.total_programs,
+        'Total Prizes': record.total_prizes,
+        'Total Prize Value': record.total_value > 0 ? `₹${record.total_value}` : '₹0',
+        'Sections': record.sections.join(', '),
+        'Programs Won': record.programs.map(p => p.program_name).join(', '),
+        'Placements': record.programs.map(p => p.placement).join(', '),
+        'Prizes Won': record.programs.filter(p => p.prize_name).map(p => p.prize_name).join(', ') || 'No prizes',
+        'Prize Categories': [...new Set(record.programs.filter(p => p.prize_category_name).map(p => p.prize_category_name))].join(', ') || '-',
+        'Best Placement': record.programs.reduce((best, current) => 
+          current.placement_order < best.placement_order ? current : best
+        ).placement,
+        'Performance Summary': `${record.total_prizes} prizes from ${record.total_programs} programs across ${record.sections.length} sections`
+      }))
 
       // Create workbook and worksheet
       const wb = XLSX.utils.book_new()
@@ -251,18 +249,19 @@ export default function AllProgramWinnersPage() {
 
       // Set column widths
       const colWidths = [
+        { wch: 8 },  // Rank
         { wch: 20 }, // Student Name
         { wch: 12 }, // Chest No
+        { wch: 12 }, // Total Programs
         { wch: 12 }, // Total Prizes
-        { wch: 12 }, // Total Value
-        { wch: 15 }, // Section
-        { wch: 8 },  // Section Code
-        { wch: 25 }, // Program
-        { wch: 12 }, // Placement
-        { wch: 20 }, // Prize Name
-        { wch: 15 }, // Prize Category
-        { wch: 12 }, // Prize Value
-        { wch: 20 }  // Notes
+        { wch: 15 }, // Total Prize Value
+        { wch: 15 }, // Sections
+        { wch: 40 }, // Programs Won
+        { wch: 25 }, // Placements
+        { wch: 40 }, // Prizes Won
+        { wch: 25 }, // Prize Categories
+        { wch: 15 }, // Best Placement
+        { wch: 50 }  // Performance Summary
       ]
       ws['!cols'] = colWidths
 
@@ -504,7 +503,7 @@ export default function AllProgramWinnersPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredRecords.map((student, index) => (
+              {filteredRecords.map((student) => (
                 <Card key={student.student_chest_no} className="border border-gray-200 hover:border-gray-300 transition-colors">
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
