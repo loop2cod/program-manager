@@ -53,6 +53,11 @@ const menuItems = [
   {
     title: "Add Students",
     url: "/dashboard/add-students",
+    icon: Plus,
+  },
+  {
+    title: "All Students",
+    url: "/dashboard/all-students",
     icon: Users,
   },
   {

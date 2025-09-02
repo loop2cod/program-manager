@@ -570,6 +570,7 @@ export const programPrizeAssignmentsService = {
       throw new Error(`Failed to fetch assignments: ${error.message}`)
     }
 
+
     return data || []
   },
 
@@ -674,11 +675,11 @@ export const programPrizeAssignmentsService = {
 export const assignmentUtils = {
   getStandardPlacements(): { placement: string; placement_order: number }[] {
     return [
-      { placement: '1st Place', placement_order: 1 },
-      { placement: '2nd Place', placement_order: 2 },
-      { placement: '3rd Place', placement_order: 3 },
+      { placement: '1st', placement_order: 1 },
+      { placement: '2nd', placement_order: 2 },
+      { placement: '3rd', placement_order: 3 },
       { placement: 'Participation', placement_order: 10 },
-      { placement: 'Special Award', placement_order: 15 },
+      { placement: 'Best Performance', placement_order: 15 },
       { placement: 'Consolation', placement_order: 20 }
     ]
   },
@@ -688,11 +689,25 @@ export const assignmentUtils = {
     const found = standardPlacements.find(p => p.placement === placement)
     if (found) return found.placement_order
 
-    // Extract number from placement if it contains ordinal numbers
+    // Handle both formats: "1st" or "1st Place"
     const match = placement.match(/(\d+)(st|nd|rd|th)/i)
     if (match) {
       return parseInt(match[1])
     }
+
+    // Handle legacy format conversion
+    if (placement.includes('Place')) {
+      const legacyMatch = placement.match(/(\d+)(st|nd|rd|th)\s+Place/i)
+      if (legacyMatch) {
+        return parseInt(legacyMatch[1])
+      }
+    }
+
+    // Special cases
+    if (placement.toLowerCase().includes('participation')) return 10
+    if (placement.toLowerCase().includes('best') || placement.toLowerCase().includes('performance')) return 15
+    if (placement.toLowerCase().includes('consolation')) return 20
+    if (placement.toLowerCase().includes('special')) return 15
 
     // Default to high number for custom placements
     return 100
@@ -938,6 +953,7 @@ export const programWinnersService = {
       console.error('Error fetching program winners:', error)
       throw new Error(`Failed to fetch program winners: ${error.message}`)
     }
+
 
     return data || []
   },

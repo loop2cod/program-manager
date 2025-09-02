@@ -322,6 +322,7 @@ export default function ProgramAssignmentsPage() {
     if (lower.includes('2nd') || lower.includes('second')) return <Medal className="h-4 w-4 text-gray-500" />
     if (lower.includes('3rd') || lower.includes('third')) return <Award className="h-4 w-4 text-amber-600" />
     if (lower.includes('participation')) return <Target className="h-4 w-4 text-blue-600" />
+    if (lower.includes('best') || lower.includes('performance')) return <Award className="h-4 w-4 text-purple-600" />
     return <Gift className="h-4 w-4 text-green-600" />
   }
 

@@ -23,14 +23,21 @@ import {
   type StudentPrizeExportData 
 } from '@/lib/excel-utils'
 
+// Enhanced student interface with all programs
+interface StudentWithAllPrograms extends StudentWithDetails {
+  allPrograms: StudentWithDetails[]
+  totalPrograms: number
+  sections: string[]
+}
+
 export default function StudentDetailPage() {
   const params = useParams()
   const router = useRouter()
   const studentId = params.id as string
 
-  const [student, setStudent] = useState<StudentWithDetails | null>(null)
+  const [student, setStudent] = useState<StudentWithAllPrograms | null>(null)
   const [programWinners, setProgramWinners] = useState<ProgramWinnerWithDetails[]>([])
-  const [programPrizes, setProgramPrizes] = useState<ProgramPrizeAssignmentWithDetails[]>([])
+  const [allProgramPrizes, setAllProgramPrizes] = useState<ProgramPrizeAssignmentWithDetails[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingWinners, setIsLoadingWinners] = useState(false)
   const [isLoadingPrizes, setIsLoadingPrizes] = useState(false)
@@ -39,46 +46,66 @@ export default function StudentDetailPage() {
     const loadStudent = async () => {
       try {
         setIsLoading(true)
-        // For now, we'll get all students and find the one we need
-        // In a production app, you'd have a getById method
+        
+        // Get all students and find the one we need, then get all students with same chest number
         const allStudents = await studentsService.getAll()
         const foundStudent = allStudents.find(s => s.id === studentId)
         
         if (!foundStudent) {
           toast.error('Student not found')
-          router.push('/dashboard/add-students')
+          router.push('/dashboard/all-students')
           return
         }
 
-        setStudent(foundStudent)
+        // Find all students with the same chest number (all programs for this student)
+        const allStudentPrograms = allStudents.filter(s => s.chest_no === foundStudent.chest_no)
         
-        // Load program winners for this student
+        // Get unique sections
+        const uniqueSections = [...new Set(allStudentPrograms.map(s => s.section_code))]
+        
+        // Create enhanced student object
+        const enhancedStudent: StudentWithAllPrograms = {
+          ...foundStudent,
+          allPrograms: allStudentPrograms.sort((a, b) => a.program_name.localeCompare(b.program_name)),
+          totalPrograms: allStudentPrograms.length,
+          sections: uniqueSections
+        }
+
+        setStudent(enhancedStudent)
+        
+        // Load program winners for ALL student IDs with same chest number
         setIsLoadingWinners(true)
         try {
-          const winnersData = await programWinnersService.getByStudent(studentId)
-          setProgramWinners(winnersData)
+          const allWinnersData = await Promise.all(
+            allStudentPrograms.map(s => programWinnersService.getByStudent(s.id))
+          )
+          // Flatten the results
+          const allWinners = allWinnersData.flat()
+          setProgramWinners(allWinners)
         } catch (error) {
           console.error('Error loading program winners:', error)
-          // Don't show error toast for winners - it's not critical
         } finally {
           setIsLoadingWinners(false)
         }
 
-        // Load program prize assignments for the student's program
+        // Load program prize assignments for ALL programs this student is in
         setIsLoadingPrizes(true)
         try {
-          const prizesData = await programPrizeAssignmentsService.getByProgram(foundStudent.program_id)
-          setProgramPrizes(prizesData)
+          const allPrizesData = await Promise.all(
+            allStudentPrograms.map(s => programPrizeAssignmentsService.getByProgram(s.program_id))
+          )
+          // Flatten and deduplicate the results
+          const allPrizes = allPrizesData.flat()
+          setAllProgramPrizes(allPrizes)
         } catch (error) {
           console.error('Error loading program prizes:', error)
-          // Don't show error toast for prizes - it's not critical
         } finally {
           setIsLoadingPrizes(false)
         }
       } catch (error) {
         console.error('Error loading student:', error)
         toast.error('Failed to load student details')
-        router.push('/dashboard/add-students')
+        router.push('/dashboard/all-students')
       } finally {
         setIsLoading(false)
       }
@@ -183,7 +210,7 @@ export default function StudentDetailPage() {
             <p className="text-sm text-muted-foreground">The student you&apos;re looking for doesn&apos;t exist.</p>
           </div>
           <Button asChild>
-            <Link href="/dashboard/add-students">
+            <Link href="/dashboard/all-students">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Students
             </Link>
@@ -198,7 +225,7 @@ export default function StudentDetailPage() {
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" asChild>
-          <Link href="/dashboard/add-students?tab=all-students">
+          <Link href="/dashboard/all-students">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Students
           </Link>
@@ -255,21 +282,22 @@ export default function StudentDetailPage() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                     <Building2 className="h-4 w-4" />
-                    Section
+                    Sections ({student.sections.length})
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary">{student.section_code}</Badge>
-                    <span className="text-sm">{student.section_name}</span>
+                  <div className="flex flex-wrap gap-2">
+                    {student.sections.map((section) => (
+                      <Badge key={section} variant="secondary">{section}</Badge>
+                    ))}
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                     <BookOpen className="h-4 w-4" />
-                    Program
+                    Programs ({student.totalPrograms})
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="default">{student.program_name}</Badge>
+                    <Badge variant="default">{student.totalPrograms} Programs</Badge>
                   </div>
                 </div>
               </div>
@@ -296,38 +324,93 @@ export default function StudentDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Program Participation Details */}
+          {/* All Programs Participation */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Award className="h-5 w-5" />
-                Program Participation
+                <BookOpen className="h-5 w-5" />
+                All Program Participations ({student.totalPrograms})
               </CardTitle>
               <CardDescription>
-                Details about the student&apos;s program participation
+                All programs this student is registered for
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-medium text-blue-900">Current Program</h4>
-                    <Badge variant="default">{student.program_name}</Badge>
-                  </div>
-                  
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Section:</span>
-                      <span className="font-medium">{student.section_name} ({student.section_code})</span>
-                    </div>
-                    {student.program_description && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Description:</span>
-                        <span className="font-medium flex-1 text-right">{student.program_description}</span>
+              <div className="grid gap-4">
+                {student.allPrograms.map((program, index) => {
+                  const winner = programWinners.find(w => w.program_name === program.program_name && w.student_name === student.name)
+                  return (
+                    <div key={program.id} className="border border-gray-200 rounded-lg p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center text-sm font-medium text-blue-700">
+                              {index + 1}
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-blue-900">{program.program_name}</h4>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Badge variant="outline" className="text-xs">
+                                  {program.section_code}
+                                </Badge>
+                                <span>{program.section_name}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            {winner ? (
+                              <div className="space-y-1">
+                                <Badge variant={winner.placement_order <= 3 ? "default" : "secondary"} className="text-xs">
+                                  {winner.placement}
+                                </Badge>
+                                {winner.prize_name && (
+                                  <Badge variant="default" className="text-xs bg-green-600 block">
+                                    🏆 Prize
+                                  </Badge>
+                                )}
+                              </div>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">
+                                No Placement
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {program.program_description && (
+                          <div className="text-sm text-muted-foreground">
+                            {program.program_description}
+                          </div>
+                        )}
+
+                        {winner?.prize_name && (
+                          <div className="bg-white bg-opacity-70 rounded-md p-3 border border-green-200">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Gift className="h-4 w-4 text-green-600" />
+                              <span className="text-sm font-medium text-green-800">Prize Awarded</span>
+                            </div>
+                            <div className="text-sm text-gray-700">
+                              <div className="font-medium">{winner.prize_name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                Category: {winner.prize_category_name || winner.prize_category}
+                                {winner.prize_average_value && (
+                                  <> • Value: ${winner.prize_average_value}</>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="text-xs text-muted-foreground">
+                          Registered: {program.created_at 
+                            ? new Date(program.created_at).toLocaleDateString()
+                            : 'Unknown'
+                          }
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
+                    </div>
+                  )
+                })}
               </div>
               
               {/* Program Awards and Achievements */}
@@ -466,7 +549,7 @@ export default function StudentDetailPage() {
                 Available Program Prizes
               </CardTitle>
               <CardDescription>
-                Prize structure for {student.program_name} program
+                Prize structures for all programs this student participates in
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -474,15 +557,19 @@ export default function StudentDetailPage() {
                 <div className="text-center py-4">
                   <div className="text-sm text-muted-foreground">Loading prize information...</div>
                 </div>
-              ) : programPrizes.length > 0 ? (
+              ) : allProgramPrizes.length > 0 ? (
                 <div className="space-y-3">
                   <div className="text-sm text-muted-foreground mb-3">
-                    The following prizes are available for different placements in this program:
+                    The following prizes are available for different placements across all programs:
                   </div>
-                  {programPrizes
-                    .sort((a, b) => a.placement_order - b.placement_order)
+                  {allProgramPrizes
+                    .sort((a, b) => {
+                      // Sort by program name first, then placement order
+                      const programCompare = a.program_name.localeCompare(b.program_name)
+                      return programCompare !== 0 ? programCompare : a.placement_order - b.placement_order
+                    })
                     .map((prize) => {
-                      const isWon = programWinners.some(w => w.placement === prize.placement)
+                      const isWon = programWinners.some(w => w.placement === prize.placement && w.program_name === prize.program_name)
                       return (
                         <div key={prize.id} className={`border rounded-lg p-4 ${
                           isWon 
@@ -499,7 +586,10 @@ export default function StudentDetailPage() {
                                 )}
                               </div>
                               <div className="space-y-2 flex-1">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Badge variant="outline" className="text-xs">
+                                    {prize.program_name}
+                                  </Badge>
                                   <Badge 
                                     variant={prize.placement_order <= 3 ? "default" : "secondary"}
                                     className="text-xs font-medium"
@@ -576,8 +666,13 @@ export default function StudentDetailPage() {
               </div>
               <Separator />
               <div className="text-center">
-                <div className="text-lg font-semibold">{student.section_code}</div>
-                <p className="text-xs text-muted-foreground">Section Code</p>
+                <div className="text-lg font-semibold">{student.totalPrograms}</div>
+                <p className="text-xs text-muted-foreground">Programs</p>
+              </div>
+              <Separator />
+              <div className="text-center">
+                <div className="text-lg font-semibold">{student.sections.length}</div>
+                <p className="text-xs text-muted-foreground">Sections</p>
               </div>
               <Separator />
               <div className="text-center">
@@ -590,11 +685,6 @@ export default function StudentDetailPage() {
                   {programWinners.filter(w => w.prize_name).length}
                 </div>
                 <p className="text-xs text-muted-foreground">Prizes</p>
-              </div>
-              <Separator />
-              <div className="text-center">
-                <div className="text-lg font-semibold text-green-600">Active</div>
-                <p className="text-xs text-muted-foreground">Status</p>
               </div>
             </CardContent>
           </Card>
