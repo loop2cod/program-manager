@@ -1163,6 +1163,96 @@ export const getAllProgramWinnersByStudent = async (): Promise<StudentWinnersSum
   }
 }
 
+// Interface for students without prizes
+export interface StudentWithoutPrizes {
+  student_id: string
+  student_name: string
+  student_chest_no: string
+  section_id: string
+  section_name: string
+  section_code: string
+  program_id: string
+  program_name: string
+}
+
+// Get all students who haven't received any prizes
+export const getStudentsWithoutPrizes = async (): Promise<StudentWithoutPrizes[]> => {
+  try {
+    // Get all students from students_view
+    const { data: allStudents, error: studentsError } = await supabase
+      .from('students_view')
+      .select('*')
+      .order('section_code', { ascending: true })
+      .order('name', { ascending: true })
+
+    if (studentsError) {
+      throw studentsError
+    }
+
+    if (!allStudents || allStudents.length === 0) {
+      return []
+    }
+
+    // Get all students who have won ANY prizes (including those with prize_name = null)
+    // We need to get all program_winners_view entries to check which students have prizes
+    const { data: allWinners, error: winnersError } = await supabase
+      .from('program_winners_view')
+      .select('student_id, student_chest_no, prize_name')
+
+    if (winnersError) {
+      throw winnersError
+    }
+
+    // Group winners by chest number and check if they have any actual prizes
+    const studentChestNosWithPrizes = new Set<string>()
+    
+    if (allWinners && allWinners.length > 0) {
+      // Group by chest number to check if student has ANY prize across all programs
+      const winnersByChestNo = new Map<string, any[]>()
+      
+      allWinners.forEach(winner => {
+        if (!winnersByChestNo.has(winner.student_chest_no)) {
+          winnersByChestNo.set(winner.student_chest_no, [])
+        }
+        winnersByChestNo.get(winner.student_chest_no)!.push(winner)
+      })
+
+      // Check each student - if they have ANY prize in ANY program, exclude them
+      winnersByChestNo.forEach((winners, chestNo) => {
+        const hasAnyPrize = winners.some(winner => winner.prize_name !== null && winner.prize_name !== undefined)
+        if (hasAnyPrize) {
+          studentChestNosWithPrizes.add(chestNo)
+        }
+      })
+    }
+
+    // Filter out students whose chest numbers are in the prizes set
+    const studentsWithoutPrizes: StudentWithoutPrizes[] = []
+    
+    allStudents.forEach((student: StudentWithDetails) => {
+      if (!studentChestNosWithPrizes.has(student.chest_no)) {
+        studentsWithoutPrizes.push({
+          student_id: student.id,
+          student_name: student.name,
+          student_chest_no: student.chest_no,
+          section_id: student.section_id,
+          section_name: student.section_name,
+          section_code: student.section_code,
+          program_id: student.program_id,
+          program_name: student.program_name
+        })
+      }
+    })
+
+    return studentsWithoutPrizes.sort((a, b) => 
+      a.section_code.localeCompare(b.section_code) || a.student_name.localeCompare(b.student_name)
+    )
+  } catch (error) {
+    console.error('Error fetching students without prizes:', error)
+    throw new Error(`Failed to fetch students without prizes: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
 // Get programs with participant counts
 export const getProgramsWithParticipants = async (): Promise<ProgramWithParticipants[]> => {
   try {
