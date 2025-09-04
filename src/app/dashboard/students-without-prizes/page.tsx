@@ -220,7 +220,7 @@ export default function StudentsWithoutPrizesPage() {
           <div className="space-y-1">
             <h2 className="text-xl font-semibold">Students Without Prizes</h2>
             <p className="text-sm text-muted-foreground">
-              Students who participated in programs but haven't won any prizes
+              Students who participated in programs but haven&apos;t won any prizes
             </p>
           </div>
         </div>
@@ -242,7 +242,7 @@ export default function StudentsWithoutPrizesPage() {
         <div className="space-y-1">
           <h2 className="text-xl font-semibold">Students Without Prizes</h2>
           <p className="text-sm text-muted-foreground">
-            Students who participated in programs but haven't won any prizes
+            Students who participated in programs but haven&apos;t won any prizes
           </p>
         </div>
         <div className="flex items-center gap-2">
